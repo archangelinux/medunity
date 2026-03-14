@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+@theme inline {
+  --color-bg: #EEF0F4;
+  --color-surface: #FFFFFF;
+  --color-surface-soft: #F3F4F7;
+  --color-border: #E2E5EB;
+  --color-border-soft: #ECEEF2;
+
+  --color-text-primary: #0F1729;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94A3B8;
+
+  --color-accent: #5D9E82;
+  --color-accent-soft: #EDF6F2;
+  --color-accent-hover: #4A8168;
+
+  --color-warning: #D97706;
+  --color-warning-soft: #FFFBEB;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FEF2F2;
+  --color-info: #0891B2;
+  --color-info-soft: #ECFEFF;
+
+  --color-mint: #DBEAFE;
+  --color-cream: #F8FAFC;
+
+  --font-heading: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 2px 8px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.04);
+  --shadow-lg: 0 4px 16px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+/* Shimmer animation for skeleton loaders */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface-soft) 25%, var(--color-border-soft) 50%, var(--color-surface-soft) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+/* CTAS badge pop animation */
+@keyframes ctas-pop {
+  0% { transform: scale(0.9); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ctas-badge-enter {
+  animation: ctas-pop 300ms ease-out forwards;
+}
+
+/* Pattern alert reveal */
+@keyframes reveal-right {
+  0% { opacity: 0; transform: translateX(-8px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.pattern-reveal {
+  animation: reveal-right 400ms ease-out forwards;
+}
+
+/* Slide up for care routing panel */
+@keyframes slide-up {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+.slide-up {
+  animation: slide-up 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Slide down for new entry */
+@keyframes slide-down {
+  0% { opacity: 0; transform: translateY(-12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.slide-down {
+  animation: slide-down 250ms ease-out forwards;
+}
+
+/* User location pulse */
+@keyframes user-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(2); opacity: 0; }
+}
+
+/* Mapbox popup overrides */
+.mapboxgl-popup-content {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-md) !important;
+  padding: 10px 14px !important;
+  border: 1px solid var(--color-border-soft) !important;
+}
+.mapboxgl-popup-tip {
+  border-top-color: var(--color-surface) !important;
+}
+.mapboxgl-popup-close-button {
+  display: none;
+}
+
+/* Glass panel — frosted cards floating over map */
+.glass-panel [data-card],
+.glass-panel [data-glass] {
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.35);
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
