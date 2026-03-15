@@ -310,7 +310,7 @@ export default function LandingPage() {
             MedUnity is not a substitute for professional medical advice.
           </p>
           <p className="text-[0.75rem] text-text-tertiary">
-            Hack the North 2026
+            GenAI Genesis 2026
           </p>
         </div>
       </footer>

@@ -2,7 +2,7 @@
 
 A longitudinal health agent for Canadians. Symptom tracking with AI triage, CTAS-based clinical assessment, real-time facility routing, and provider intake reports.
 
-Built for Hack the North 2026.
+Built for GenAI Genesis 2026.
 
 ---
 

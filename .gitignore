@@ -26,4 +26,6 @@ Thumbs.db
 venv/
 .venv/
 
-claude-starting-prompt.md
+*claude-starting-prompt.md
+
+.claude/
