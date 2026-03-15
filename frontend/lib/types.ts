@@ -2,8 +2,6 @@ export type CTASLevel = 1 | 2 | 3 | 4 | 5;
 
 export type EntryStatus = 'active' | 'resolved' | 'watching' | 'escalated';
 
-export type CareType = 'walk-in' | 'er' | 'urgent-care' | 'telehealth' | 'campus-health';
-
 export interface Symptom {
   label: string;
   category: 'pain' | 'digestive' | 'neurological' | 'respiratory' | 'mental' | 'general';
@@ -21,6 +19,28 @@ export interface LinkedEntry {
   date: string;
 }
 
+export interface PatientDemographics {
+  age?: number;
+  sex?: string;
+  conditions?: string[];
+  medications?: string[];
+  allergies?: string[];
+}
+
+export interface TriageReport {
+  summary: string;
+  symptomsIdentified: string[];
+  assessment: string;
+  recommendedAction: string;
+  watchFor: string[];
+  urgencyTimeframe: string;
+  recommendedCareType: 'hospital' | 'walk-in' | 'urgent-care' | 'telehealth';
+  recommendedFacilityTypes?: string[];
+  facilitySearchTerms?: string[];
+  facilityExcludeKeywords?: string[];
+  patientDemographics?: PatientDemographics;
+}
+
 export interface HealthEntry {
   id: string;
   timestamp: string;
@@ -33,20 +53,7 @@ export interface HealthEntry {
   followUp: FollowUpMessage[];
   photoUrl?: string;
   triageQuestions?: TriageQuestion[];
-}
-
-export interface Clinic {
-  id: string;
-  name: string;
-  type: CareType;
-  waitMinutes: number;
-  distanceKm: number;
-  address: string;
-  hours: string;
-  isOpen: boolean;
-  closingTime?: string;
-  services: string[];
-  recommended?: boolean;
+  triageReport?: TriageReport;
 }
 
 export interface Treatment {
@@ -64,12 +71,13 @@ export interface PatternAlert {
   description: string;
   ctasTrend: 'stable' | 'worsening' | 'improving';
   relatedEntries: number;
+  relatedEntryIds: string[];
 }
 
 export interface TriageQuestion {
   id: string;
   question: string;
-  type: 'yesno' | 'scale' | 'choice' | 'text';
+  type: 'yesno' | 'scale' | 'choice' | 'multiselect' | 'text';
   options?: string[];
 }
 
@@ -89,10 +97,18 @@ export type FacilityType =
   | 'wellness-centre'
   | 'telehealth';
 
+export const CTAS_FACILITY_MAP: Record<CTASLevel, FacilityType[]> = {
+  1: ['hospital'],
+  2: ['hospital', 'urgent-care'],
+  3: ['hospital', 'urgent-care', 'walk-in'],
+  4: ['walk-in', 'urgent-care', 'community-centre'],
+  5: ['walk-in', 'community-centre', 'wellness-centre', 'telehealth'],
+};
+
 export interface Resource {
   id: string;
   name: string;
-  category: 'food' | 'clothing' | 'hygiene' | 'medical' | 'mental-health' | 'housing' | 'other';
+  category: 'food' | 'clothing' | 'hygiene' | 'medical' | 'mental-health' | 'housing' | 'harm-reduction' | 'sexual-health' | 'other';
   inStock: boolean;
   donationNeeded: boolean;
 }

@@ -50,12 +50,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/dashboard`,
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
     });
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'global' });
+    window.location.href = '/';
   };
 
   return (

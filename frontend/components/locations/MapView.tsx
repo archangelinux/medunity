@@ -156,23 +156,24 @@ export function MapView({
     );
   }, [center, radiusKm]);
 
-  // User location marker
+  // User location marker — create once, reposition as needed
   useEffect(() => {
     if (!map.current || !userLocation) return;
 
+    // If marker already exists, just update position
     if (userMarkerRef.current) {
       userMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
       return;
     }
 
     const el = document.createElement('div');
+    el.style.cssText = 'pointer-events:none;z-index:5;';
     el.innerHTML = `
       <div style="position:relative;width:16px;height:16px;">
         <div style="
           position:absolute;inset:-8px;
           background:rgba(93,158,130,0.15);
           border-radius:50%;
-          animation:user-pulse 2s ease-in-out infinite;
         "></div>
         <div style="
           width:16px;height:16px;
@@ -185,7 +186,7 @@ export function MapView({
       </div>
     `;
 
-    userMarkerRef.current = new mapboxgl.Marker({ element: el })
+    userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
       .setLngLat([userLocation.lng, userLocation.lat])
       .addTo(map.current);
   }, [userLocation]);
@@ -277,6 +278,12 @@ export function MapView({
       markersRef.current.push(marker);
       popupsRef.current.push(popup);
     });
+
+    // Ensure user marker stays on top by re-adding its element
+    if (userMarkerRef.current && map.current) {
+      const el = userMarkerRef.current.getElement();
+      el.style.zIndex = '5';
+    }
   }, [facilities, selectedId]);
 
   // Fly to selected facility

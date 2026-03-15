@@ -22,11 +22,15 @@ from backend.api.entries import router as entries_router
 from backend.api.clinics import router as clinics_router
 from backend.api.overview import router as overview_router
 from backend.api.locations import router as locations_router
+from backend.api.provider import router as provider_router
+from backend.api.profile import router as profile_router
 
 app.include_router(entries_router)
 app.include_router(clinics_router)
 app.include_router(overview_router)
 app.include_router(locations_router)
+app.include_router(provider_router)
+app.include_router(profile_router)
 
 
 @app.get("/health")

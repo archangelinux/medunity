@@ -10,10 +10,8 @@ import { EntryHistory } from '@/components/overview/EntryHistory';
 import { SymptomFrequency } from '@/components/overview/SymptomFrequency';
 import { PatternAlertCard } from '@/components/overview/PatternAlert';
 import { TreatmentTracker } from '@/components/overview/TreatmentTracker';
-import { CareRoutingPanel } from '@/components/triage/CareRoutingPanel';
 import {
   demoEntries,
-  demoClinics,
   demoTreatments,
   demoPatternAlert,
   demoSymptomFrequency,
@@ -22,10 +20,9 @@ import {
   getEntries,
   createEntry,
   respondToEntry,
-  getCareRouting,
   getOverview,
 } from '@/lib/api';
-import type { HealthEntry, Clinic } from '@/lib/types';
+import type { HealthEntry } from '@/lib/types';
 import type { OverviewData } from '@/lib/api';
 
 function FeedContent({
@@ -33,14 +30,12 @@ function FeedContent({
   submitting,
   apiAvailable,
   onSubmit,
-  onFindCare,
   onRespond,
 }: {
   entries: HealthEntry[];
   submitting: boolean;
   apiAvailable: boolean;
   onSubmit: (text: string) => void;
-  onFindCare: (ctasLevel?: number) => void;
   onRespond: (entryId: string, message: string) => Promise<void>;
 }) {
   return (
@@ -50,7 +45,6 @@ function FeedContent({
         <EntryCard
           key={entry.id}
           entry={entry}
-          onFindCare={() => onFindCare(entry.ctasLevel)}
           onRespond={apiAvailable ? onRespond : undefined}
         />
       ))}
@@ -62,12 +56,10 @@ function OverviewContent({
   entries,
   overview,
   apiAvailable,
-  onFindCare,
 }: {
   entries: HealthEntry[];
   overview: OverviewData | null;
   apiAvailable: boolean;
-  onFindCare: () => void;
 }) {
   const hasRealData = apiAvailable && overview && overview.entryCount > 0;
   const entryCount = hasRealData ? overview.entryCount : entries.length;
@@ -81,12 +73,11 @@ function OverviewContent({
       <HealthStatus
         entryCount={entryCount}
         avgCtas={avgCtas}
-        summary={summary}
       />
       {patternAlert && (
         <PatternAlertCard
           alert={patternAlert}
-          onFindCare={onFindCare}
+          onFindCare={() => window.location.href = '/locations'}
         />
       )}
       <EntryHistory entries={entries} />
@@ -101,9 +92,7 @@ function OverviewContent({
 export default function DashboardPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'feed' | 'overview'>('feed');
-  const [showCareRouting, setShowCareRouting] = useState(false);
   const [entries, setEntries] = useState<HealthEntry[]>(demoEntries);
-  const [clinics, setClinics] = useState<Clinic[]>(demoClinics);
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(false);
@@ -161,16 +150,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleFindCare = async (ctasLevel?: number) => {
-    if (apiAvailable && ctasLevel) {
-      try {
-        const routedClinics = await getCareRouting(ctasLevel);
-        if (routedClinics.length > 0) setClinics(routedClinics);
-      } catch { /* fallback */ }
-    }
-    setShowCareRouting(true);
-  };
-
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-3 md:px-4 pb-20 md:pb-4 pt-4">
@@ -181,7 +160,6 @@ export default function DashboardPage() {
               entries={entries}
               overview={overview}
               apiAvailable={apiAvailable}
-              onFindCare={() => handleFindCare(4)}
             />
           </div>
           <FeedContent
@@ -189,7 +167,6 @@ export default function DashboardPage() {
             submitting={submitting}
             apiAvailable={apiAvailable}
             onSubmit={handleSubmit}
-            onFindCare={handleFindCare}
             onRespond={handleRespond}
           />
         </div>
@@ -219,7 +196,6 @@ export default function DashboardPage() {
               submitting={submitting}
               apiAvailable={apiAvailable}
               onSubmit={handleSubmit}
-              onFindCare={handleFindCare}
               onRespond={handleRespond}
             />
           ) : (
@@ -227,18 +203,11 @@ export default function DashboardPage() {
               entries={entries}
               overview={overview}
               apiAvailable={apiAvailable}
-              onFindCare={() => handleFindCare(4)}
             />
           )}
         </div>
       </main>
 
-      {showCareRouting && (
-        <CareRoutingPanel
-          clinics={clinics}
-          onClose={() => setShowCareRouting(false)}
-        />
-      )}
     </div>
   );
 }

@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
+import asyncio
+
 from backend.models.schemas import CreateEntryRequest, RespondRequest
 from backend.services.supabase import get_supabase
 from backend.agent.processor import process_new_entry, resolve_entry
 from backend.api.deps import get_current_user_id
+from backend.api.overview import regenerate_summary
 
 router = APIRouter(prefix="/api/entries", tags=["entries"])
 
@@ -41,6 +44,24 @@ def _transform_entry(entry: dict, messages: list) -> dict:
             }
         )
 
+    # Build triage report if present
+    triage_report = entry.get("triage_report")
+    triage_report_out = None
+    if triage_report:
+        triage_report_out = {
+            "summary": triage_report.get("summary", ""),
+            "symptomsIdentified": triage_report.get("symptoms_identified", []),
+            "assessment": triage_report.get("assessment", ""),
+            "recommendedAction": triage_report.get("recommended_action", ""),
+            "watchFor": triage_report.get("watch_for", []),
+            "urgencyTimeframe": triage_report.get("urgency_timeframe", ""),
+            "recommendedCareType": triage_report.get("recommended_care_type", "walk-in"),
+            "recommendedFacilityTypes": triage_report.get("recommended_facility_types", [triage_report.get("recommended_care_type", "walk-in")]),
+            "facilitySearchTerms": triage_report.get("facility_search_terms", []),
+            "facilityExcludeKeywords": triage_report.get("facility_exclude_keywords", []),
+            "patientDemographics": triage_report.get("patient_demographics", {}),
+        }
+
     return {
         "id": entry["id"],
         "timestamp": entry["created_at"],
@@ -52,6 +73,8 @@ def _transform_entry(entry: dict, messages: list) -> dict:
         "linkedEntries": linked_entries,
         "followUp": follow_up,
         "photoUrl": entry.get("photo_url"),
+        "triageReport": triage_report_out,
+        "triageQuestions": entry.get("triage_questions") or [],
     }
 
 
@@ -82,11 +105,18 @@ async def create_entry(req: CreateEntryRequest, user_id: str = Depends(get_curre
     )
     recent_entries = recent.data or []
 
-    # Process with Gemini agent
-    agent_result = await process_new_entry(req.text, recent_entries)
+    # Fetch user profile for context
+    profile_result = sb.table("user_profiles").select("*").eq("user_id", user_id).execute()
+    user_profile = profile_result.data[0] if profile_result.data else None
 
-    # Update entry with extracted symptoms
-    update_data = {"extracted_symptoms": agent_result["extracted_symptoms"]}
+    # Process with Gemini agent
+    agent_result = await process_new_entry(req.text, recent_entries, user_profile)
+
+    # Update entry with extracted symptoms and triage questions
+    update_data = {
+        "extracted_symptoms": agent_result["extracted_symptoms"],
+        "triage_questions": agent_result.get("triage_questions", []),
+    }
 
     # Link to previous entry if detected
     if agent_result.get("linked_entry_id"):
@@ -106,13 +136,38 @@ async def create_entry(req: CreateEntryRequest, user_id: str = Depends(get_curre
             agent_result["extracted_symptoms"],
             [],
             recent_entries,
+            user_profile,
         )
         update_data["ctas_level"] = resolution["ctas_level"]
         update_data["ctas_label"] = resolution["ctas_label"]
         update_data["assessment"] = resolution["assessment"]
         update_data["recommended_action"] = resolution["recommended_action"]
         update_data["status"] = resolution["status"]
-        agent_text = resolution.get("response_to_user", "")
+        # Patient demographics for report
+        patient_demographics = {}
+        if user_profile:
+            for field in ("age", "sex"):
+                if user_profile.get(field):
+                    patient_demographics[field] = user_profile[field]
+            for field in ("conditions", "medications", "allergies"):
+                val = user_profile.get(field)
+                if isinstance(val, list) and val:
+                    patient_demographics[field] = val
+
+        update_data["triage_report"] = {
+            "summary": resolution.get("summary", ""),
+            "symptoms_identified": resolution.get("symptoms_identified", []),
+            "assessment": resolution.get("assessment", ""),
+            "recommended_action": resolution.get("recommended_action", ""),
+            "watch_for": resolution.get("watch_for", []),
+            "urgency_timeframe": resolution.get("urgency_timeframe", ""),
+            "recommended_care_type": resolution.get("recommended_care_type", "walk-in"),
+            "recommended_facility_types": resolution.get("recommended_facility_types", [resolution.get("recommended_care_type", "walk-in")]),
+            "facility_search_terms": resolution.get("facility_search_terms", []),
+            "facility_exclude_keywords": resolution.get("facility_exclude_keywords", []),
+            "patient_demographics": patient_demographics,
+        }
+        agent_text = "Your preliminary triage assessment is ready."
         triage_questions = []
 
     sb.table("entries").update(update_data).eq("id", entry_id).execute()
@@ -131,6 +186,9 @@ async def create_entry(req: CreateEntryRequest, user_id: str = Depends(get_curre
         .order("created_at")
         .execute()
     )
+
+    # Regenerate health summary in background
+    asyncio.create_task(regenerate_summary(user_id))
 
     return {
         "entry": _transform_entry(updated.data[0], msgs.data or []),
@@ -180,9 +238,48 @@ async def respond_to_entry(entry_id: str, req: RespondRequest, user_id: str = De
             .limit(10)
             .execute()
         )
+        # Fetch user profile for demographics context
+        profile_result = sb.table("user_profiles").select("*").eq("user_id", user_id).execute()
+        user_profile = profile_result.data[0] if profile_result.data else None
+
         resolution = await resolve_entry(
-            entry["raw_text"], symptoms, thread, recent.data or []
+            entry["raw_text"], symptoms, thread, recent.data or [], user_profile
         )
+
+        # Build patient demographics for report
+        patient_demographics = {}
+        if user_profile:
+            if user_profile.get("age"):
+                patient_demographics["age"] = user_profile["age"]
+            if user_profile.get("sex"):
+                patient_demographics["sex"] = user_profile["sex"]
+            if user_profile.get("conditions"):
+                conds = user_profile["conditions"]
+                if isinstance(conds, list) and conds:
+                    patient_demographics["conditions"] = conds
+            if user_profile.get("medications"):
+                meds = user_profile["medications"]
+                if isinstance(meds, list) and meds:
+                    patient_demographics["medications"] = meds
+            if user_profile.get("allergies"):
+                allergies = user_profile["allergies"]
+                if isinstance(allergies, list) and allergies:
+                    patient_demographics["allergies"] = allergies
+
+        # Build triage report JSONB
+        triage_report = {
+            "summary": resolution.get("summary", ""),
+            "symptoms_identified": resolution.get("symptoms_identified", []),
+            "assessment": resolution.get("assessment", ""),
+            "recommended_action": resolution.get("recommended_action", ""),
+            "watch_for": resolution.get("watch_for", []),
+            "urgency_timeframe": resolution.get("urgency_timeframe", ""),
+            "recommended_care_type": resolution.get("recommended_care_type", "walk-in"),
+            "recommended_facility_types": resolution.get("recommended_facility_types", [resolution.get("recommended_care_type", "walk-in")]),
+            "facility_search_terms": resolution.get("facility_search_terms", []),
+            "facility_exclude_keywords": resolution.get("facility_exclude_keywords", []),
+            "patient_demographics": patient_demographics,
+        }
 
         sb.table("entries").update(
             {
@@ -191,10 +288,11 @@ async def respond_to_entry(entry_id: str, req: RespondRequest, user_id: str = De
                 "assessment": resolution["assessment"],
                 "recommended_action": resolution["recommended_action"],
                 "status": resolution["status"],
+                "triage_report": triage_report,
             }
         ).eq("id", entry_id).execute()
 
-        agent_text = resolution.get("response_to_user", "Assessment complete.")
+        agent_text = "Your preliminary triage assessment is ready."
         sb.table("thread_messages").insert(
             {"entry_id": entry_id, "role": "assistant", "text": agent_text}
         ).execute()
@@ -207,6 +305,9 @@ async def respond_to_entry(entry_id: str, req: RespondRequest, user_id: str = De
             .order("created_at")
             .execute()
         )
+
+        # Regenerate health summary in background
+        asyncio.create_task(regenerate_summary(user_id))
 
         return {
             "entry": _transform_entry(updated.data[0], msgs.data or []),
@@ -266,6 +367,25 @@ async def list_entries(user_id: str = Depends(get_current_user_id)):
     return {"entries": result}
 
 
+@router.get("/{entry_id}")
+async def get_entry(entry_id: str, user_id: str = Depends(get_current_user_id)):
+    sb = get_supabase()
+
+    entry_result = sb.table("entries").select("*").eq("id", entry_id).eq("user_id", user_id).execute()
+    if not entry_result.data:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    msgs = (
+        sb.table("thread_messages")
+        .select("*")
+        .eq("entry_id", entry_id)
+        .order("created_at")
+        .execute()
+    )
+
+    return {"entry": _transform_entry(entry_result.data[0], msgs.data or [])}
+
+
 @router.delete("/{entry_id}")
 async def delete_entry(entry_id: str, user_id: str = Depends(get_current_user_id)):
     sb = get_supabase()
@@ -277,5 +397,8 @@ async def delete_entry(entry_id: str, user_id: str = Depends(get_current_user_id
 
     # thread_messages cascade-deletes via FK
     sb.table("entries").delete().eq("id", entry_id).execute()
+
+    # Regenerate health summary in background
+    asyncio.create_task(regenerate_summary(user_id))
 
     return {"deleted": True}

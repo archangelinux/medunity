@@ -13,11 +13,92 @@ import {
 } from 'lucide-react';
 import { MapView } from './MapView';
 import { FacilityCard } from './FacilityCard';
+import { StagingPanel } from './StagingPanel';
+import { StagingFacilityCard } from './StagingFacilityCard';
+import { ProviderReport } from './ProviderReport';
 import { ReportModal } from './ReportModal';
 import { Badge } from '@/components/ui/Badge';
+import { getEntry, getBackendFacilities, getSignalsForEntry, cancelSignal, markSignalArrived } from '@/lib/api';
 import { fetchNearbyFacilities, geocodeSearch } from '@/lib/overpass';
 import type { GeocodeSuggestion } from '@/lib/overpass';
-import type { LocationFacility, FacilityType, LocationReport } from '@/lib/types';
+import type { LocationFacility, FacilityType, LocationReport, HealthEntry } from '@/lib/types';
+import { CTAS_FACILITY_MAP } from '@/lib/types';
+
+/**
+ * Smart facility matching: uses AI-recommended types and search terms
+ * to find facilities relevant to the specific condition (not just CTAS level).
+ */
+// Specialist facility keywords — clinics with these in the name are specialty-only
+// and should be excluded unless the patient's condition specifically matches
+const SPECIALIST_KEYWORDS = [
+  'eye', 'vision', 'optom', 'ophthal', 'dental', 'dent', 'orthodon',
+  'chiro', 'physio', 'physiother', 'massage', 'acupunctur', 'naturo',
+  'cosmetic', 'aesthetic', 'dermat', 'skin', 'laser', 'hair',
+  'fertility', 'ivf', 'prenatal', 'maternity', 'obstet',
+  'veterinar', 'animal', 'pet',
+  'occupational therapy', 'speech', 'audiol', 'hearing',
+  'podiatr', 'foot care', 'orthotics',
+  'weight loss', 'bariatric', 'diet',
+  'sleep clinic', 'imaging', 'mri', 'x-ray', 'radiol',
+];
+
+function isSpecialistMatch(facilityName: string, searchTerms: string[]): boolean {
+  const nameLower = facilityName.toLowerCase();
+  for (const term of searchTerms) {
+    if (nameLower.includes(term.toLowerCase())) return true;
+  }
+  return false;
+}
+
+function matchesStagingEntry(facility: LocationFacility, entry: HealthEntry): boolean {
+  const report = entry.triageReport;
+  const nameLower = facility.name.toLowerCase();
+  const servicesLower = facility.services.map(s => s.toLowerCase()).join(' ');
+  const allText = `${nameLower} ${servicesLower}`;
+
+  // EXCLUDE facilities whose name/services match exclusion keywords from the AI
+  if (report?.facilityExcludeKeywords && report.facilityExcludeKeywords.length > 0) {
+    const excluded = report.facilityExcludeKeywords.some(kw =>
+      allText.includes(kw.toLowerCase())
+    );
+    if (excluded) return false;
+  }
+
+  // EXCLUDE specialist clinics — check BOTH name AND services for specialty keywords
+  // e.g., "Eye Clinic", a clinic with "optometry" in services, etc.
+  const patientTerms = (report?.facilitySearchTerms || []).map(t => t.toLowerCase());
+  const isSpecialist = SPECIALIST_KEYWORDS.some(kw => allText.includes(kw));
+  if (isSpecialist) {
+    // Only include if the patient's search terms explicitly match this specialty
+    const specialtyMatch = patientTerms.some(term =>
+      SPECIALIST_KEYWORDS.some(kw => term.includes(kw) || kw.includes(term))
+    ) || patientTerms.some(term => allText.includes(term));
+    if (!specialtyMatch) return false;
+  }
+
+  // CTAS 1-2: always include hospitals — emergent patients need ERs
+  if (entry.ctasLevel <= 2 && facility.type === 'hospital') return true;
+
+  // If AI provided specific facility types, use those
+  if (report?.recommendedFacilityTypes && report.recommendedFacilityTypes.length > 0) {
+    if (report.recommendedFacilityTypes.includes(facility.type)) return true;
+  }
+
+  // Fallback to CTAS-based filtering
+  const allowed = CTAS_FACILITY_MAP[entry.ctasLevel] || [];
+  if (allowed.includes(facility.type)) return true;
+
+  // Also match by AI-provided search terms against facility services
+  if (report?.facilitySearchTerms && report.facilitySearchTerms.length > 0) {
+    const terms = report.facilitySearchTerms.map(t => t.toLowerCase());
+    const serviceMatch = facility.services.some(s =>
+      terms.some(t => s.toLowerCase().includes(t) || t.includes(s.toLowerCase()))
+    );
+    if (serviceMatch) return true;
+  }
+
+  return false;
+}
 
 const filterOptions: { label: string; value: FacilityType | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -37,7 +118,20 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-export function LocationsPage() {
+interface LocationsPageProps {
+  entryId?: string;
+  patternEntryIds?: string[];
+}
+
+export function LocationsPage({ entryId, patternEntryIds }: LocationsPageProps) {
+  // --- Staging state ---
+  const [stagingEntry, setStagingEntry] = useState<HealthEntry | null>(null);
+  const [patternLinkedEntries, setPatternLinkedEntries] = useState<HealthEntry[]>([]);
+  const [departureOffset, setDepartureOffset] = useState(0);
+  const [stagingLoading, setStagingLoading] = useState(false);
+
+  const isStaging = !!stagingEntry;
+
   // --- Location state ---
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
@@ -55,6 +149,8 @@ export function LocationsPage() {
   const [nameSearch, setNameSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportingFacility, setReportingFacility] = useState<LocationFacility | null>(null);
+  const [sendReportFacility, setSendReportFacility] = useState<LocationFacility | null>(null);
+  const [sentSignals, setSentSignals] = useState<Map<string, { signalId: string; status: string }>>(new Map());
 
   // --- Geocoding state ---
   const [locationInput, setLocationInput] = useState('');
@@ -62,6 +158,64 @@ export function LocationsPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // --- Fetch staging entry when entryId provided ---
+  useEffect(() => {
+    if (!entryId && !patternEntryIds?.length) {
+      setStagingEntry(null);
+      setPatternLinkedEntries([]);
+      return;
+    }
+
+    setStagingLoading(true);
+
+    if (patternEntryIds?.length) {
+      // Pattern mode: fetch all related entries, use most recent as primary
+      Promise.all(patternEntryIds.map((id) => getEntry(id).catch(() => null)))
+        .then((results) => {
+          const validEntries = results.filter(Boolean) as HealthEntry[];
+          if (validEntries.length > 0) {
+            // Sort by timestamp desc — most recent becomes the primary entry
+            validEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setStagingEntry(validEntries[0]);
+            setPatternLinkedEntries(validEntries.slice(1));
+          }
+        })
+        .finally(() => setStagingLoading(false));
+    } else if (entryId) {
+      getEntry(entryId)
+        .then((entry) => setStagingEntry(entry))
+        .catch(() => setStagingEntry(null))
+        .finally(() => setStagingLoading(false));
+    }
+  }, [entryId, patternEntryIds]);
+
+  // --- Fetch existing sent signals for this entry ---
+  useEffect(() => {
+    if (!stagingEntry) {
+      setSentSignals(new Map());
+      return;
+    }
+    getSignalsForEntry(stagingEntry.id)
+      .then((data) => {
+        const map = new Map<string, { signalId: string; status: string }>();
+        for (const sig of data.signals) {
+          // Use facility name as key since IDs may differ between Overpass and backend
+          map.set(sig.facilityId, { signalId: sig.id, status: sig.status });
+          // Also store by name for cross-matching
+          map.set(sig.facilityName.toLowerCase(), { signalId: sig.id, status: sig.status });
+        }
+        setSentSignals(map);
+      })
+      .catch(() => {});
+  }, [stagingEntry]);
+
+  // --- Auto-filter by CTAS when staging ---
+  useEffect(() => {
+    if (stagingEntry) {
+      setFilter('all');
+    }
+  }, [stagingEntry]);
 
   // --- Get user location on mount ---
   useEffect(() => {
@@ -101,9 +255,23 @@ export function LocationsPage() {
       setLoading(true);
       setError(null);
       try {
-        const results = await fetchNearbyFacilities(lat, lng, debouncedRadius);
+        // Fetch Overpass (hospitals/clinics) + backend (community centres with resources) in parallel
+        const [overpassResults, backendResults] = await Promise.all([
+          fetchNearbyFacilities(lat, lng, debouncedRadius),
+          getBackendFacilities(lat, lng),
+        ]);
+
+        // Merge: backend centres (with resources) take priority over Overpass duplicates
+        const backendNames = new Set(backendResults.map((f) => f.name.toLowerCase()));
+        const deduped = overpassResults.filter(
+          (f) => !backendNames.has(f.name.toLowerCase()),
+        );
+        const merged = [...deduped, ...backendResults].sort(
+          (a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999),
+        );
+
         if (!cancelled) {
-          setFacilities(results);
+          setFacilities(merged);
           setLastUpdated(new Date());
         }
       } catch {
@@ -210,6 +378,17 @@ export function LocationsPage() {
   // --- Filtered + searched facilities ---
   const filteredFacilities = useMemo(() => {
     let result = facilities;
+
+    // In staging mode, use AI-recommended facility types + search terms
+    // If filtering produces 0 results, fall back to showing all (never leave an emergent patient with no options)
+    if (stagingEntry) {
+      const matched = result.filter((f) => matchesStagingEntry(f, stagingEntry));
+      if (matched.length > 0) {
+        result = matched;
+      }
+      // else: keep all facilities — better to show everything than nothing
+    }
+
     if (filter !== 'all') {
       result = result.filter((f) => f.type === filter);
     }
@@ -223,7 +402,7 @@ export function LocationsPage() {
       );
     }
     return result;
-  }, [facilities, filter, nameSearch]);
+  }, [facilities, filter, nameSearch, stagingEntry]);
 
   // Count by type
   const typeCounts = useMemo(() => {
@@ -248,6 +427,12 @@ export function LocationsPage() {
     [facilities],
   );
 
+  const handleCloseStaging = useCallback(() => {
+    setStagingEntry(null);
+    // Remove entryId from URL without full navigation
+    window.history.replaceState(null, '', '/locations');
+  }, []);
+
   // CSS variable overrides for the teal glass theme
   const glassVars = {
     '--color-surface': 'rgba(236, 248, 245, 0.78)',
@@ -256,6 +441,183 @@ export function LocationsPage() {
     '--color-border': 'rgba(175, 212, 204, 0.45)',
   } as React.CSSProperties;
 
+  // --- Staging mode layout ---
+  if (isStaging) {
+    return (
+      <div className="h-screen relative overflow-hidden">
+        {/* Full-bleed map */}
+        <div className="absolute inset-0">
+          <MapView
+            facilities={filteredFacilities}
+            userLocation={userLocation}
+            center={center}
+            radiusKm={radiusKm}
+            selectedId={selectedId}
+            onFacilitySelect={setSelectedId}
+          />
+        </div>
+
+        {/* Map legend — bottom-left */}
+        <div className="absolute bottom-3 left-3 z-10 bg-surface/85 backdrop-blur-lg rounded-[var(--radius-md)] px-3 py-2 shadow-md border border-white/30">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem]">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#FDCECE]" />Hospital</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#C6DBFF]" />Walk-in</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#FDE3B9]" />Urgent</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#C2E8B0]" />Community</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#DDD4F5]" />Wellness</span>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="absolute top-3 left-3 z-10 bg-surface/85 backdrop-blur-lg rounded-[var(--radius-md)] px-3 py-2 shadow-md border border-white/30">
+            <span className="flex items-center gap-2 text-[0.8125rem] text-text-secondary">
+              <Loader2 size={14} className="animate-spin text-accent" />
+              Searching nearby facilities...
+            </span>
+          </div>
+        )}
+
+        {/* Floating top pill — entry info + departure picker + view report */}
+        <div className="absolute top-3 left-[60px] right-[500px] z-10 hidden md:block">
+          <StagingPanel
+            entry={stagingEntry!}
+            departureOffset={departureOffset}
+            onDepartureChange={setDepartureOffset}
+          />
+        </div>
+
+        {/* Mobile top pill */}
+        <div className="absolute top-3 left-3 right-3 z-10 md:hidden">
+          <StagingPanel
+            entry={stagingEntry!}
+            departureOffset={departureOffset}
+            onDepartureChange={setDepartureOffset}
+          />
+        </div>
+
+        {/* Floating right panel — glass style matching normal mode */}
+        <div
+          className="
+            glass-panel absolute z-10
+            bottom-0 left-0 right-0 top-[40vh]
+            md:top-0 md:left-auto md:right-0 md:w-[480px]
+            flex flex-col pointer-events-none
+          "
+          style={glassVars}
+        >
+          {/* Header card */}
+          <div
+            data-glass
+            className="
+              pointer-events-auto mx-3 mt-3 mb-0 flex-shrink-0
+              bg-surface rounded-[var(--radius-lg)] shadow-md p-4
+            "
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-[1.125rem] font-bold font-[family-name:var(--font-heading)] text-text-primary">
+                Matching Facilities
+              </h2>
+              <button
+                onClick={handleCloseStaging}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)]
+                           bg-surface-soft text-text-secondary text-[0.8125rem] font-medium
+                           hover:bg-border-soft transition-colors cursor-pointer"
+              >
+                View All Facilities
+              </button>
+            </div>
+            <p className="text-[0.75rem] text-text-tertiary">
+              {loading ? 'Searching...' : `${filteredFacilities.length} facilities match your triage level`}
+            </p>
+          </div>
+
+          {/* Scrollable card list */}
+          <div className="flex-1 overflow-y-auto pointer-events-auto px-3 pt-3 pb-20 md:pb-4 space-y-2"
+               style={{ maskImage: 'linear-gradient(to bottom, transparent 0px, black 12px)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0px, black 12px)' }}>
+            {filteredFacilities.map((facility) => (
+              <div key={facility.id} data-facility-id={facility.id}>
+                <StagingFacilityCard
+                  facility={facility}
+                  departureOffset={departureOffset}
+                  isSelected={facility.id === selectedId}
+                  signalStatus={sentSignals.get(facility.id) || sentSignals.get(facility.name.toLowerCase()) || null}
+                  onSelect={() => setSelectedId(facility.id === selectedId ? null : facility.id)}
+                  onSendReport={() => setSendReportFacility(facility)}
+                  onCancel={async (signalId) => {
+                    try {
+                      await cancelSignal(signalId);
+                      setSentSignals((prev) => {
+                        const next = new Map(prev);
+                        // Update status to cancelled
+                        for (const [key, val] of next) {
+                          if (val.signalId === signalId) next.set(key, { ...val, status: 'cancelled' });
+                        }
+                        return next;
+                      });
+                    } catch {}
+                  }}
+                  onArrived={async (signalId) => {
+                    try {
+                      await markSignalArrived(signalId);
+                      setSentSignals((prev) => {
+                        const next = new Map(prev);
+                        for (const [key, val] of next) {
+                          if (val.signalId === signalId) next.set(key, { ...val, status: 'arrived' });
+                        }
+                        return next;
+                      });
+                    } catch {}
+                  }}
+                />
+              </div>
+            ))}
+
+            {!loading && filteredFacilities.length === 0 && (
+              <div data-glass className="bg-surface rounded-[var(--radius-lg)] shadow-md border border-white/30 text-center py-12 px-4">
+                <Filter size={32} className="mx-auto text-text-tertiary mb-3" />
+                <p className="text-[0.9375rem] font-medium text-text-secondary">No matching facilities</p>
+                <p className="text-[0.8125rem] text-text-tertiary mt-1">Try increasing the search radius</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Report modal (anonymous facility feedback) */}
+        {reportingFacility && (
+          <ReportModal
+            facility={reportingFacility}
+            onClose={() => setReportingFacility(null)}
+            onSubmit={handleReport}
+          />
+        )}
+
+        {/* Send Report modal — lifted to top level so it overlays properly */}
+        {sendReportFacility && stagingEntry && (
+          <ProviderReport
+            entry={stagingEntry}
+            facility={sendReportFacility}
+            departureOffset={departureOffset}
+            userLocation={userLocation ?? undefined}
+            onClose={() => setSendReportFacility(null)}
+            onSent={(signalId?: string) => {
+              setSentSignals((prev) => {
+                const next = new Map(prev);
+                const sid = signalId || `local-${Date.now()}`;
+                next.set(sendReportFacility.id, { signalId: sid, status: 'active' });
+                next.set(sendReportFacility.name.toLowerCase(), { signalId: sid, status: 'active' });
+                return next;
+              });
+              setSendReportFacility(null);
+            }}
+            linkedEntries={patternLinkedEntries}
+          />
+        )}
+
+      </div>
+    );
+  }
+
+  // --- Normal mode layout ---
   return (
     <div className="h-screen relative overflow-hidden">
       {/* Full-bleed map */}

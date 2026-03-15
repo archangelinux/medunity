@@ -6,11 +6,11 @@ interface CTASBadgeProps {
 }
 
 const ctasConfig: Record<CTASLevel, { label: string; bg: string; text: string }> = {
-  1: { label: 'CTAS 1 · Resuscitation', bg: 'bg-danger', text: 'text-white' },
-  2: { label: 'CTAS 2 · Emergent', bg: 'bg-warning', text: 'text-white' },
-  3: { label: 'CTAS 3 · Urgent', bg: 'bg-info', text: 'text-white' },
-  4: { label: 'CTAS 4 · Less Urgent', bg: 'bg-accent-soft', text: 'text-accent' },
-  5: { label: 'CTAS 5 · Non-Urgent', bg: 'bg-surface-soft', text: 'text-text-secondary' },
+  1: { label: 'CTAS 1 · Resuscitation', bg: 'bg-ctas-1-soft', text: 'text-ctas-1' },
+  2: { label: 'CTAS 2 · Emergent', bg: 'bg-ctas-2-soft', text: 'text-ctas-2' },
+  3: { label: 'CTAS 3 · Urgent', bg: 'bg-ctas-3-soft', text: 'text-ctas-3' },
+  4: { label: 'CTAS 4 · Less Urgent', bg: 'bg-ctas-4-soft', text: 'text-ctas-4' },
+  5: { label: 'CTAS 5 · Non-Urgent', bg: 'bg-ctas-5-soft', text: 'text-ctas-5' },
 };
 
 export function CTASBadge({ level, className = '' }: CTASBadgeProps) {

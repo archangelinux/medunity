@@ -168,6 +168,8 @@ export async function fetchNearbyFacilities(
   nwr["healthcare"="clinic"](around:${radiusM},${lat},${lng});
   nwr["amenity"="community_centre"](around:${radiusM},${lat},${lng});
   nwr["amenity"="social_facility"](around:${radiusM},${lat},${lng});
+  nwr["healthcare"="counselling"](around:${radiusM},${lat},${lng});
+  nwr["healthcare"="community_health_centre"](around:${radiusM},${lat},${lng});
 );
 out center;`;
 
@@ -181,9 +183,23 @@ out center;`;
 
   const data = await res.json();
 
+  // Health-related keywords — community centres must match at least one to be included
+  const HEALTH_KEYWORDS = [
+    'health', 'medical', 'clinic', 'hospital', 'care', 'wellness', 'mental',
+    'counselling', 'counseling', 'addiction', 'harm reduction', 'naloxone',
+    'nursing', 'therapy', 'rehab', 'prenatal', 'sexual', 'dental',
+  ];
+
   const facilities = (data.elements as OverpassElement[])
     .map((el) => transformElement(el, lat, lng))
-    .filter((f): f is LocationFacility => f !== null);
+    .filter((f): f is LocationFacility => {
+      if (!f) return false;
+      // Hospitals, walk-ins, urgent care always pass
+      if (f.type !== 'community-centre' && f.type !== 'wellness-centre') return true;
+      // Community/wellness centres must have a health-related name or service
+      const text = `${f.name} ${f.services.join(' ')}`.toLowerCase();
+      return HEALTH_KEYWORDS.some((kw) => text.includes(kw));
+    });
 
   // Deduplicate by normalized name — keep the entry with more data
   const deduped = new Map<string, LocationFacility>();

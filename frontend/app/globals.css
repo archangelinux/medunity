@@ -16,15 +16,32 @@
   --color-accent-soft: #EDF6F2;
   --color-accent-hover: #4A8168;
 
-  --color-warning: #D97706;
-  --color-warning-soft: #FFFBEB;
-  --color-danger: #DC2626;
-  --color-danger-soft: #FEF2F2;
-  --color-info: #0891B2;
-  --color-info-soft: #ECFEFF;
+  --color-warning: #B45309;
+  --color-warning-soft: #FEF3C7;
+  --color-danger: #B91C1C;
+  --color-danger-soft: #FDCECE;
+  --color-info: #0E7490;
+  --color-info-soft: #C6DBFF;
+
+  --color-gold: #92400E;
+  --color-gold-soft: #FDE3B9;
+  --color-purple: #6D28D9;
+  --color-purple-soft: #DDD4F5;
 
   --color-mint: #DBEAFE;
   --color-cream: #F8FAFC;
+
+  /* CTAS level colors — Lobster Pink → Rosy Copper → Ocean Deep → Tropical Teal → Tea Green */
+  --color-ctas-1: #E5625E;
+  --color-ctas-1-soft: #FADCDB;
+  --color-ctas-2: #CD533B;
+  --color-ctas-2-soft: #F8D5CC;
+  --color-ctas-3: #2364AA;
+  --color-ctas-3-soft: #CDDDF2;
+  --color-ctas-4: #62A8AC;
+  --color-ctas-4-soft: #D4EDEE;
+  --color-ctas-5: #8BA868;
+  --color-ctas-5-soft: #E8F2D8;
 
   --font-heading: 'Plus Jakarta Sans', sans-serif;
   --font-body: 'DM Sans', sans-serif;
@@ -145,4 +162,24 @@ h1, h2, h3, h4, h5, h6 {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Provider glass panels */
+.provider-glass {
+  background: rgba(255, 255, 255, 0.88);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* Signal popup overrides */
+.signal-popup .mapboxgl-popup-content {
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+  padding: 10px 14px !important;
+  border: 1px solid var(--color-border-soft) !important;
+}
+.signal-popup .mapboxgl-popup-tip {
+  border-top-color: white !important;
 }

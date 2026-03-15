@@ -6,34 +6,37 @@ interface SymptomFrequencyProps {
 }
 
 export function SymptomFrequency({ data }: SymptomFrequencyProps) {
-  const maxCount = Math.max(...data.map((d) => d.count));
+  if (data.length === 0) {
+    return (
+      <Card padding="sm">
+        <h3 className="text-[0.8125rem] font-semibold font-[family-name:var(--font-heading)] text-text-primary mb-1">
+          Symptoms
+        </h3>
+        <p className="text-[0.75rem] text-text-tertiary">No symptoms logged yet</p>
+      </Card>
+    );
+  }
 
   return (
-    <Card>
-      <h3 className="text-[1rem] font-semibold font-[family-name:var(--font-heading)] text-text-primary mb-1">
-        Symptom Frequency
+    <Card padding="sm">
+      <h3 className="text-[0.8125rem] font-semibold font-[family-name:var(--font-heading)] text-text-primary mb-2">
+        Symptoms <span className="text-text-tertiary font-normal">· 30 days</span>
       </h3>
-      <p className="text-[0.75rem] text-text-tertiary mb-4">Past 30 days</p>
-
-      <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
         {data.map((item) => (
-          <div key={item.symptom} className="flex items-center gap-3">
-            <span className="text-[0.8125rem] text-text-secondary w-24 text-right flex-shrink-0">
-              {item.symptom}
-            </span>
-            <div className="flex-1 h-[6px] bg-surface-soft rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${(item.count / maxCount) * 100}%`,
-                  backgroundColor: item.color,
-                }}
-              />
-            </div>
-            <span className="text-[0.8125rem] font-semibold text-text-primary w-6 text-right font-[family-name:var(--font-heading)]">
+          <span
+            key={item.symptom}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-[0.75rem] font-medium"
+            style={{ backgroundColor: `${item.color}14`, color: item.color }}
+          >
+            {item.symptom}
+            <span
+              className="inline-flex items-center justify-center w-4.5 h-4.5 rounded-full text-[0.625rem] font-bold text-white min-w-[18px] px-1"
+              style={{ backgroundColor: item.color }}
+            >
               {item.count}
             </span>
-          </div>
+          </span>
         ))}
       </div>
     </Card>

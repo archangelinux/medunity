@@ -4,11 +4,13 @@ import { Package, AlertTriangle, Check, X } from 'lucide-react';
 import type { Resource } from '@/lib/types';
 
 const categoryLabels: Record<string, string> = {
+  'harm-reduction': 'Harm Reduction',
+  medical: 'Medical Supplies',
+  'sexual-health': 'Sexual Health',
+  'mental-health': 'Mental Health',
+  hygiene: 'Hygiene',
   food: 'Food',
   clothing: 'Clothing',
-  hygiene: 'Hygiene',
-  medical: 'Medical',
-  'mental-health': 'Mental Health',
   housing: 'Housing',
   other: 'Other',
 };

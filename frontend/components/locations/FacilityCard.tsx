@@ -96,9 +96,6 @@ export function FacilityCard({ facility, isSelected, onSelect, onReport }: Facil
             <Badge variant={typeBadgeVariant[facility.type]}>
               {typeLabels[facility.type]}
             </Badge>
-            {facility.isFree && (
-              <Badge variant="accent">Free</Badge>
-            )}
             {latestStrain && getStrainBadge(latestStrain.strainLevel!)}
           </div>
         </div>

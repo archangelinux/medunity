@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS entries (
   status TEXT NOT NULL DEFAULT 'active',
   assessment TEXT,
   recommended_action TEXT,
+  triage_report JSONB,
+  triage_questions JSONB DEFAULT '[]'::jsonb,
   linked_entry_id UUID REFERENCES entries(id),
   link_reason TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -83,6 +85,43 @@ CREATE TABLE IF NOT EXISTS location_reports (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- User profiles table (health profile, cached AI summary, lab results)
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  age INT,
+  sex TEXT CHECK (sex IN ('male', 'female', 'other', 'prefer-not-to-say')),
+  height_cm DOUBLE PRECISION,
+  weight_kg DOUBLE PRECISION,
+  conditions JSONB DEFAULT '[]'::jsonb,
+  medications JSONB DEFAULT '[]'::jsonb,
+  allergies JSONB DEFAULT '[]'::jsonb,
+  lab_results JSONB DEFAULT '[]'::jsonb,
+  health_summary TEXT,
+  summary_updated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Provider signals table (incoming patient signals for provider view)
+CREATE TABLE IF NOT EXISTS provider_signals (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  entry_id UUID REFERENCES entries(id),
+  facility_id TEXT NOT NULL,
+  facility_name TEXT NOT NULL,
+  ctas_level INT NOT NULL,
+  chief_complaint TEXT NOT NULL,
+  symptoms JSONB DEFAULT '[]'::jsonb,
+  eta_minutes INT NOT NULL DEFAULT 15,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  suggested_ward TEXT,
+  prep_checklist JSONB DEFAULT '[]'::jsonb,
+  report_data JSONB,
+  status TEXT NOT NULL DEFAULT 'active',
+  reported_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Disable RLS (no auth for hackathon)
 ALTER TABLE entries DISABLE ROW LEVEL SECURITY;
 ALTER TABLE thread_messages DISABLE ROW LEVEL SECURITY;
@@ -90,6 +129,8 @@ ALTER TABLE clinics DISABLE ROW LEVEL SECURITY;
 ALTER TABLE community_centres DISABLE ROW LEVEL SECURITY;
 ALTER TABLE centre_resources DISABLE ROW LEVEL SECURITY;
 ALTER TABLE location_reports DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE provider_signals DISABLE ROW LEVEL SECURITY;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_entries_user_id ON entries(user_id);
@@ -99,25 +140,16 @@ CREATE INDEX IF NOT EXISTS idx_clinics_type ON clinics(type);
 CREATE INDEX IF NOT EXISTS idx_centre_resources_centre_id ON centre_resources(centre_id);
 CREATE INDEX IF NOT EXISTS idx_location_reports_facility_id ON location_reports(facility_id);
 CREATE INDEX IF NOT EXISTS idx_location_reports_created_at ON location_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_provider_signals_facility_id ON provider_signals(facility_id);
+CREATE INDEX IF NOT EXISTS idx_provider_signals_status ON provider_signals(status);
+CREATE INDEX IF NOT EXISTS idx_provider_signals_reported_at ON provider_signals(reported_at DESC);
 
--- Seed clinics: KW-area real clinics
-INSERT INTO clinics (name, type, wait_minutes, address, latitude, longitude, hours, is_open, closing_time, services) VALUES
-  ('Grand River Hospital ER', 'er', 120, '835 King St W, Kitchener', 43.4516, -80.5052, '24/7', true, NULL, '["Emergency care", "Trauma", "Imaging", "Lab work"]'),
-  ('St. Mary''s General Hospital ER', 'er', 95, '911 Queen''s Blvd, Kitchener', 43.4372, -80.4865, '24/7', true, NULL, '["Emergency care", "Cardiac care", "Imaging"]'),
-  ('Kitchener Walk-In Clinic', 'walk_in', 25, '525 Highland Rd W, Kitchener', 43.4350, -80.5100, '8 AM - 8 PM', true, '8:00 PM', '["General assessment", "Prescriptions", "Blood work on-site"]'),
-  ('Waterloo Walk-In Medical Centre', 'walk_in', 35, '170 University Ave W, Waterloo', 43.4680, -80.5250, '9 AM - 5 PM', true, '5:00 PM', '["General assessment", "Prescriptions", "Referrals"]'),
-  ('Grand River Urgent Care', 'urgent_care', 45, '405 The Boardwalk, Waterloo', 43.4820, -80.5460, '10 AM - 10 PM', true, '10:00 PM', '["Urgent assessment", "X-ray", "Stitches", "Prescriptions"]'),
-  ('UWaterloo Health Services', 'walk_in', 40, 'SLC Building, Room 2040, Waterloo', 43.4723, -80.5449, '9 AM - 4:30 PM', true, '4:30 PM', '["Student care", "Mental health", "Referrals"]'),
-  ('Maple Telehealth', 'telehealth', 8, 'Online', NULL, NULL, '24/7', true, NULL, '["Video consult", "Prescriptions", "Specialist referral"]'),
-  ('KW After Hours Clinic', 'after_hours', 30, '100 Ainslie St S, Cambridge', 43.3616, -80.3144, '5 PM - 9 PM', true, '9:00 PM', '["After-hours care", "Prescriptions", "General assessment"]'),
-  ('Cambridge Memorial Hospital ER', 'er', 75, '700 Coronation Blvd, Cambridge', 43.3616, -80.3144, '24/7', true, NULL, '["Emergency care", "Imaging", "Lab work"]');
-
--- Seed community centres
+-- Seed community health centres (Toronto, health & wellness focused only)
 INSERT INTO community_centres (name, type, address, latitude, longitude, hours, is_open, closing_time, services, is_free, phone) VALUES
-  ('The Working Centre', 'community-centre', '58 Queen St S, Kitchener', 43.4510, -80.4920, '9 AM - 5 PM', true, '5:00 PM', '["Job search support", "Computer access", "Community kitchen", "Affordable housing help"]', true, '519-743-1151'),
-  ('House of Friendship', 'community-centre', '51 Charles St E, Kitchener', 43.4480, -80.4900, '8:30 AM - 4:30 PM', true, '4:30 PM', '["Food bank", "Emergency shelter referrals", "Addiction services", "Community meals"]', true, '519-742-8327'),
-  ('KW Multicultural Centre', 'community-centre', '102 King St W, Kitchener', 43.4540, -80.4940, '9 AM - 5 PM', true, '5:00 PM', '["Settlement services", "Language classes", "Employment support", "Translation services"]', true, '519-745-2531'),
-  ('YMCA of Three Rivers', 'wellness-centre', '250 King St W, Kitchener', 43.4560, -80.4970, '6 AM - 10 PM', true, '10:00 PM', '["Fitness programs", "Swimming", "Youth programs", "Childcare", "Community wellness"]', false, '519-743-5201'),
-  ('Langs Community Health Centre', 'wellness-centre', '1145 Concession Rd, Cambridge', 43.3890, -80.3700, '8:30 AM - 8 PM', true, '8:00 PM', '["Primary care", "Mental health counselling", "Diabetes education", "Prenatal care", "Dietitian"]', true, '519-653-1470'),
-  ('KW Counselling Services', 'wellness-centre', '480 Charles St E, Kitchener', 43.4505, -80.4880, '9 AM - 9 PM', true, '9:00 PM', '["Individual counselling", "Family therapy", "Group therapy", "Crisis support", "Sliding scale fees"]', false, '519-884-0000'),
-  ('Reception House Waterloo Region', 'wellness-centre', '63 Allen St E, Waterloo', 43.4400, -80.4850, '9 AM - 5 PM', true, '5:00 PM', '["Refugee settlement", "Health navigation", "Housing support", "Orientation programs"]', true, '519-743-2397');
+  ('Parkdale Queen West Community Health Centre', 'community-centre', '1229 Queen St W, Toronto', 43.6401, -79.4338, '8:30 AM - 8 PM', true, '8:00 PM', '["Harm reduction", "Naloxone distribution", "Primary care", "Mental health", "Needle exchange", "Wound care"]', true, '416-537-2455'),
+  ('South Riverdale Community Health Centre', 'community-centre', '955 Queen St E, Toronto', 43.6603, -79.3387, '9 AM - 5 PM', true, '5:00 PM', '["Harm reduction", "Naloxone training", "Hepatitis C testing", "HIV testing", "Chronic disease management", "Diabetes education"]', true, '416-461-1925'),
+  ('Regent Park Community Health Centre', 'community-centre', '465 Dundas St E, Toronto', 43.6598, -79.3622, '8 AM - 8 PM', true, '8:00 PM', '["Primary care", "Prenatal care", "Sexual health clinic", "Mental health counselling", "Harm reduction", "Foot care"]', true, '416-364-2261'),
+  ('Sherbourne Health', 'wellness-centre', '333 Sherbourne St, Toronto', 43.6619, -79.3713, '9 AM - 5 PM', true, '5:00 PM', '["LGBTQ+ health", "Primary care", "Mental health", "Harm reduction", "Sexual health", "Counselling"]', true, '416-324-4180'),
+  ('Unison Health & Community Services — Jane St', 'community-centre', '1651 Keele St, Toronto', 43.6871, -79.4671, '8:30 AM - 4:30 PM', true, '4:30 PM', '["Primary care", "Mental health", "Diabetes education", "Prenatal care", "Health education", "Immunizations"]', true, '416-653-5400'),
+  ('Centre for Addiction & Mental Health — Community', 'wellness-centre', '60 White Squirrel Way, Toronto', 43.6490, -79.4020, '8 AM - 8 PM', true, '8:00 PM', '["Addiction services", "Mental health counselling", "Crisis support", "Group therapy", "Harm reduction", "Naloxone distribution"]', true, '416-535-8501');

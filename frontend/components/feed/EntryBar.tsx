@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ArrowUp, ImagePlus, X, Loader2 } from 'lucide-react';
-import { quickTapPills } from '@/lib/demo-data';
+import { ArrowRight, ImagePlus, X, Loader2 } from 'lucide-react';
 
 interface EntryBarProps {
   onSubmit?: (text: string, photoFile?: File) => void;
@@ -40,12 +39,8 @@ export function EntryBar({ onSubmit, submitting = false }: EntryBarProps) {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handlePillTap = (pill: string) => {
-    setText((prev) => (prev ? `${prev}, ${pill.toLowerCase()}` : pill));
-  };
-
   return (
-    <div className="bg-surface rounded-[var(--radius-lg)] shadow-sm p-4">
+    <div>
       {/* Photo preview */}
       {photoPreview && (
         <div className="relative inline-block mb-3">
@@ -63,15 +58,15 @@ export function EntryBar({ onSubmit, submitting = false }: EntryBarProps) {
         </div>
       )}
 
-      {/* Input area */}
-      <div className="relative">
+      {/* Input + action buttons side by side */}
+      <div className="flex gap-2">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Describe how you're feeling..."
           rows={2}
           disabled={submitting}
-          className="w-full bg-surface-soft rounded-[var(--radius-md)] pl-4 pr-24 py-3 text-[0.9375rem] text-text-primary placeholder:text-text-tertiary border border-transparent focus:outline-none focus:border-accent/30 focus:bg-white transition-all duration-150 resize-none font-[family-name:var(--font-body)] disabled:opacity-60"
+          className="flex-1 bg-accent-soft/60 rounded-[var(--radius-md)] px-4 py-2.5 text-[0.875rem] text-text-primary placeholder:text-text-tertiary border-none focus:outline-none transition-all duration-150 resize-none font-[family-name:var(--font-body)] disabled:opacity-60"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -80,8 +75,8 @@ export function EntryBar({ onSubmit, submitting = false }: EntryBarProps) {
           }}
         />
 
-        {/* Action buttons — anchored inside the input */}
-        <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
+        {/* Action buttons — stacked vertically to the right */}
+        <div className="flex flex-col gap-1 flex-shrink-0 justify-center">
           <input
             ref={fileInputRef}
             type="file"
@@ -92,10 +87,10 @@ export function EntryBar({ onSubmit, submitting = false }: EntryBarProps) {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={submitting}
-            className="w-8 h-8 rounded-[var(--radius-sm)] text-text-tertiary hover:bg-border-soft hover:text-text-secondary flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-8 h-8 rounded-[var(--radius-sm)] bg-surface-soft text-text-tertiary hover:bg-border-soft hover:text-text-secondary flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             title="Attach photo"
           >
-            <ImagePlus size={18} />
+            <ImagePlus size={15} />
           </button>
           <button
             onClick={handleSubmit}
@@ -104,26 +99,12 @@ export function EntryBar({ onSubmit, submitting = false }: EntryBarProps) {
             title="Send"
           >
             {submitting ? (
-              <Loader2 size={16} className="animate-spin" />
+              <Loader2 size={14} className="animate-spin" />
             ) : (
-              <ArrowUp size={16} strokeWidth={2.5} />
+              <ArrowRight size={14} strokeWidth={2.5} />
             )}
           </button>
         </div>
-      </div>
-
-      {/* Quick-tap pills */}
-      <div className="flex flex-wrap gap-1.5 mt-3">
-        {quickTapPills.map((pill) => (
-          <button
-            key={pill}
-            onClick={() => handlePillTap(pill)}
-            disabled={submitting}
-            className="px-3 py-1.5 text-[0.8125rem] font-medium rounded-full bg-surface-soft text-text-secondary hover:bg-accent-soft hover:text-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {pill}
-          </button>
-        ))}
       </div>
     </div>
   );

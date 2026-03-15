@@ -1,6 +1,5 @@
 import {
   HealthEntry,
-  Clinic,
   Treatment,
   PatternAlert,
   SymptomFrequencyItem,
@@ -102,45 +101,6 @@ export const demoEntries: HealthEntry[] = [
   },
 ];
 
-export const demoClinics: Clinic[] = [
-  {
-    id: 'clinic-1',
-    name: 'MediCentre Walk-In',
-    type: 'walk-in',
-    waitMinutes: 25,
-    distanceKm: 1.2,
-    address: '845 Park Ave, Unit 3',
-    hours: '8 AM – 8 PM',
-    isOpen: true,
-    closingTime: '8:00 PM',
-    services: ['General assessment', 'Prescriptions', 'Blood work on-site'],
-    recommended: true,
-  },
-  {
-    id: 'clinic-2',
-    name: 'UWaterloo Health Services',
-    type: 'campus-health',
-    waitMinutes: 40,
-    distanceKm: 0.3,
-    address: 'SLC Building, Room 2040',
-    hours: '9 AM – 4:30 PM',
-    isOpen: true,
-    closingTime: '4:30 PM',
-    services: ['Student care', 'Mental health', 'Referrals'],
-  },
-  {
-    id: 'clinic-3',
-    name: 'Maple Telehealth',
-    type: 'telehealth',
-    waitMinutes: 8,
-    distanceKm: 0,
-    address: 'Online',
-    hours: '24/7',
-    isOpen: true,
-    services: ['Video consult', 'Prescriptions', 'Specialist referral'],
-  },
-];
-
 export const demoTreatments: Treatment[] = [
   {
     id: 'treatment-1',
@@ -174,15 +134,16 @@ export const demoPatternAlert: PatternAlert = {
   description: '3 headache entries in 5 days with increasing severity. Photophobia is a new associated symptom. Recommend GP assessment for migraine management.',
   ctasTrend: 'worsening',
   relatedEntries: 3,
+  relatedEntryIds: ['entry-1', 'entry-3'],
 };
 
 export const demoSymptomFrequency: SymptomFrequencyItem[] = [
-  { symptom: 'Headache', count: 3, color: '#1D4ED8' },
-  { symptom: 'Fatigue', count: 2, color: '#94A3B8' },
-  { symptom: 'Nausea', count: 1, color: '#D97706' },
-  { symptom: 'Sore throat', count: 1, color: '#DC2626' },
-  { symptom: 'Cough', count: 1, color: '#0891B2' },
-  { symptom: 'Photophobia', count: 1, color: '#1D4ED8' },
+  { symptom: 'Headache', count: 3, color: '#2364AA' },
+  { symptom: 'Fatigue', count: 2, color: '#62A8AC' },
+  { symptom: 'Nausea', count: 1, color: '#CD533B' },
+  { symptom: 'Sore throat', count: 1, color: '#E5625E' },
+  { symptom: 'Cough', count: 1, color: '#0E7490' },
+  { symptom: 'Photophobia', count: 1, color: '#2D5F1E' },
 ];
 
 export const quickTapPills = [
