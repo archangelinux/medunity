@@ -10,25 +10,23 @@ Built for GenAI Genesis 2026.
 
 ## The Problem
 
-6.5 million Canadians don't have a family doctor. When something feels wrong, their options are Google, a chatbot with no clinical training, or a 4-hour ER wait. Patients don't know how serious their symptoms are — so they either waste hours in an ER for a sore throat or ignore something that needs attention. Providers on the other end have no visibility into who's coming, no way to prepare, and no community-wide picture of demand.
+Like many university students and young people, I move around all the time — always changing my walk-in clinic, my pharmacy, my context. Often when something feels off, options are Google, a very tempting general-use chatbot that misleads, an 8-hour ER wait only to miss more suitable resources nearby, or even worse — to ignore something that actually needs attention. And that's with having a family doctor — around 6 million Canadians don't.
 
-## What MedUnity Does
+Most hospitals in Canada are also over 100% capacity, with frontline workers overworked, and overcrowding mismanaged. In 2024, roughly 500,000 Canadians left ERs before seeing a doctor. It reveals a severe systemic weakness in human empowerment that many Canadians know all too well.
 
-MedUnity creates a shared layer of medical intelligence across patients, providers, and communities.
+**MedUnity exists to empower not only individuals in making the best decisions with their health data, but allowing every user action to inform and benefit the community at large. It's built on 3 areas: acuity, continuity, and community.**
 
-### For Patients
-- **Symptom tracking** — log how you're feeling in plain language. AI extracts structured symptoms, links related entries, and detects patterns over your 30-day health timeline.
-- **CTAS triage** — answer a short assessment form and receive a clinical-grade triage report powered by a fine-tuned model trained on Canada's official emergency acuity standard (CTAS 2025).
-- **Smart care routing** — get matched to facilities based on your specific condition, not just proximity. Send your triage report ahead so the provider knows you're coming.
+---
 
-### For Providers
-- **Real-time demand dashboard** — incoming patient signals on a live map, driving along actual road routes toward your facility.
-- **AI demand analysis** — cluster detection ("4 respiratory patients incoming — consider isolation protocol"), capacity projection, ward assignments, prep checklists, diversion recommendations.
-- **Scenario simulation** — stress-test readiness with flu season, mass casualty, and heat wave scenarios using curated Toronto patient profiles with time-acceleration.
+## What it does
 
-### For Communities
-- **Community health centres** with live resource inventories — naloxone kits, menstrual products, STI testing, mental health counselling slots.
-- **Resource shortage reporting** — staff and visitors flag what's running low in real time.
+MedUnity is a **longitudinal health platform** that creates a shared layer of medical intelligence across multiple audiences:
+
+**For patients: an AI-powered preliminary triage system.** You describe symptoms in plain language, answer a dynamically generated short triage form, and receive a structured clinical assessment with a CTAS score and recommendations, all based on CTAS 2025 (the Canadian Triage and Acuity Scale, the same framework used in every Canadian ER). Your entries build a 30-day health timeline, where the agent detects patterns, links related entries, and when you're ready to seek care, routes you to the right facility that matches your condition and optimizes your time. You can send your triage report and ETA ahead so the facility knows you're coming.
+
+**For healthcare providers: real-time demand projections.** Incoming patient signals along with their CTAS score and reports appear on the map, with ETA and location updated live. The system detects clusters ("4 respiratory patients in the last hour, consider isolation protocol"), projects capacity ("full in 45 minutes at current rate"), suggests ward assignments, generates prep checklists, and recommends diversions to less-loaded facilities. Providers can also simulate different scenarios to stress-test readiness.
+
+**For communities:** features under each facility to communicate live updates, wait times, strain and resource shortage. This includes health centres with live resource inventories, where staff can report shortages (naloxone kits running low, menstrual products out of stock) and the community can see what's available where. Hospital staff can report alerts and capacities to advocate for government attention and funding under this network of shared health visibility.
 
 ---
 
@@ -55,7 +53,38 @@ Patient logs symptoms
 | Patient triage | Fine-tuned Gemini 2.5 Flash (Vertex AI) | Google GenAI SDK | CTAS classification + clinical reports |
 | Provider demand | Base Gemini 2.5 Flash | Railtracks | Demand analysis with 5 tool nodes |
 
-The fine-tuned CTAS model was trained on 1,000 synthetic examples covering all 169 CEDIS complaint categories, Primary Modifiers, and Complaint-Specific Modifiers from the CTAS 2025 guidelines. 80% casual language, 20% clinical. 77% validation accuracy on a 5-class task.
+---
+
+## How it was built
+
+**CTAS Fine-Tuning:**
+Using 1,000 synthetic training examples covering all five CTAS levels, 80% written in casual language, I fine-tuned Gemini 2.5 Flash on Vertex AI and achieved 77% validation accuracy on a 5-class task where most errors are clinically reasonable off-by-one boundary decisions (CTAS 3 vs 2). The model outputs structured assessments: CTAS level, CEDIS complaint, modifiers applied, and clinical rationale — parsed into a structured triage report that both the patient and provider can access.
+
+_About CTAS 2025: has 169 CEDIS complaint categories, Primary Modifiers (airway, breathing, circulation, disability, pain, mechanism of injury, frailty), Complaint-Specific Modifiers, and a 2025 update that reclassified sexual assault into trauma, added frailty as a universal modifier, and introduced new modifiers for diplopia, sensory loss, and pruritus._
+
+**Railtracks:**
+The provider side dashboard uses Railtracks to power ER demand intelligence. Five deterministic tool nodes run the analytics — ward routing, prep checklists, cluster detection, capacity projection, diversion recommendations — while a Railtracks agent with Gemini 2.5 Flash synthesizes them into actionable summaries for charge nurses. The tools are fast and deterministic (no LLM latency for critical decisions); the agent adds the narrative layer on top for more accessible insights.
+
+**Other Features:**
+- **Triage pipeline**: Gemini extracts symptoms and generates triage questions → user answers → fine-tuned CTAS model classifies → Gemini generates the structured report.
+- **Facility discovery**: Overpass API (OpenStreetMap) for real-time hospital/clinic queries, merged with sample data for community health centres that carry resource inventories.
+- **Simulation engine**: Four demand scenarios (normal day, flu season, mass casualty, heat wave) with curated Toronto patient profiles, realistic ETAs, deterministic routing table for ward suggestions, time-acceleration controls.
+
+---
+
+## Challenges
+
+- **CTAS boundary ambiguity** was the hardest problem. Solution was to craft training examples where the rationale section explicitly reasons about why a level was chosen, teaching the model to weigh modifiers rather than keyword-match symptoms.
+- **Facility matching noise**: querying for nearby facilities returns every eye clinic, chiropractor, and vet office. Built a multi-layer filter: specialist keyword exclusion, AI-recommended facility types from the triage report, with exclusion keywords.
+- **Simulation realism**: early versions had patient dots spawning in Lake Ontario with 3-minute ETAs on straight lines. Constrained to Toronto land bounds, used Mapbox Directions for real road geometry, and curated neighbourhood-specific patient profiles with clinically realistic presentations for each scenario.
+
+---
+
+## What I learned
+
+The biggest lesson was that the value isn't limited to the triage for an individual when the problem is systemic. A CTAS level by itself is just a number. But when that number routes you to the right facility, generates a prep checklist for the receiving nurse, feeds into a cluster detection algorithm that triggers an isolation protocol, and shows up on a community resource dashboard — that's when a single patient interaction benefits others in the community.
+
+Simulation wasn't just a demo feature. Running a mass casualty scenario and watching 10 patients converge on Toronto General, triggering cluster alerts and diversion recommendations, revealed bottlenecks in the demand analysis pipeline that I wouldn't have found testing one signal at a time.
 
 ---
 
@@ -105,40 +134,6 @@ npm run dev
 ### Database
 
 Run `backend/scripts/setup_db.sql` in the Supabase SQL Editor for the base schema, then `backend/scripts/migrate_provider_and_centres.sql` for provider signals + Toronto community health centres with resources.
-
----
-
-## Key Features in Detail
-
-### CTAS Fine-Tuning
-
-The Canadian Triage and Acuity Scale is the standard used in every Canadian ER. Our model is fine-tuned on the 2025 update which introduced:
-- Frailty as a universal Primary Modifier
-- New modifiers for diplopia, sensory loss, visual disturbances
-- Reclassification of sexual assault, head injury, traumatic spine into trauma
-- Special population considerations (pediatric, geriatric, immunocompromised)
-
-The model outputs structured text: CTAS level, CEDIS complaint, applied modifiers, and clinical rationale — parsed into a report shareable with providers.
-
-### Simulation Engine
-
-Hand-curated patient profiles pinned to real Toronto neighbourhoods. Each scenario loads clinically realistic presentations:
-- **Mass casualty** concentrates trauma at Dundas Square with anxiety/cardiac ripple outward
-- **Flu season** spreads respiratory cases city-wide with vulnerable population clusters
-- **Heat wave** targets unhoused populations, elderly without A/C, outdoor workers
-
-Signals get road routes from Mapbox Directions API and animate along actual roads. Time acceleration (1x–10x) compresses ETAs so a 25-minute drive plays out in seconds — patients converge on the facility, triggering cluster alerts and capacity warnings as they arrive.
-
-### Railtracks Integration
-
-Five deterministic tool nodes (no LLM latency for critical decisions):
-- `suggest_ward` — CTAS level + symptom category → ward (Resus Bay, CCU, Trauma Bay, etc.)
-- `generate_prep_checklist` — crash cart, ECG, isolation, splinting based on acuity
-- `detect_clusters` — 3+ same-category patients → protocol alert
-- `project_capacity` — minutes until full + recommendations
-- `recommend_diversions` — reroute CTAS 4-5 to less-loaded facilities
-
-The Railtracks agent synthesizes these into natural language summaries. Deterministic fallback if the agent fails.
 
 ---
 
@@ -199,8 +194,8 @@ medunity/
 ## Hackathon Context
 
 **GenAI Genesis 2026** —
-Sponsor Tracks: 
-Sun Life "Best Health Care Hack Using Agentic AI" track  
+Sponsor Tracks:
+Sun Life "Best Health Care Hack Using Agentic AI" track
 Google "Community Impact" track.
 Use of Railtracks
 
