@@ -8,6 +8,10 @@ import { CTASBadge } from '@/components/ui/CTASBadge';
 import { SymptomTag } from '@/components/ui/SymptomTag';
 import { IconCircle } from '@/components/ui/IconCircle';
 import { Button } from '@/components/ui/Button';
+import { ProviderReport } from '@/components/locations/ProviderReport';
+import { AgentPipeline } from '@/components/feed/AgentPipeline';
+import { getEntry, resolveEntryStream } from '@/lib/api';
+import type { PipelineStep } from '@/lib/api';
 import type { HealthEntry, TriageQuestion } from '@/lib/types';
 import { CTAS_COLORS, CTAS_BG_COLORS } from '@/lib/provider-types';
 
@@ -15,6 +19,7 @@ interface EntryCardProps {
   entry: HealthEntry;
   onRespond?: (entryId: string, message: string, resolve?: boolean) => Promise<void>;
   onDelete?: (entryId: string) => void;
+  onEntryUpdated?: (entry: HealthEntry) => void;
 }
 
 function formatTimestamp(timestamp: string) {
@@ -359,17 +364,22 @@ function SurveyResponsesButton({ entry }: { entry: HealthEntry }) {
 }
 
 // --- Main Entry Card ---
-export function EntryCard({ entry, onRespond, onDelete }: EntryCardProps) {
+export function EntryCard({ entry, onRespond, onDelete, onEntryUpdated }: EntryCardProps) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [triageSubmitting, setTriageSubmitting] = useState(false);
   const [triageSubmitted, setTriageSubmitted] = useState(false);
   const [resolving, setResolving] = useState(false);
 
+  // Agent pipeline state
+  const [pipelineActive, setPipelineActive] = useState(false);
+  const [pipelineComplete, setPipelineComplete] = useState(false);
+  const [pipelineSteps, setPipelineSteps] = useState<Record<string, PipelineStep>>({});
+
   useEffect(() => { setMounted(true); }, []);
 
   const handleTriageSubmit = async (answers: Record<string, string>) => {
-    if (!onRespond || !entry.triageQuestions) return;
+    if (!entry.triageQuestions) return;
     setTriageSubmitting(true);
 
     const lines = entry.triageQuestions.map((q) => {
@@ -378,9 +388,33 @@ export function EntryCard({ entry, onRespond, onDelete }: EntryCardProps) {
     });
     const message = `Triage responses:\n${lines.join('\n')}`;
 
+    // Use streaming endpoint with pipeline visualization
+    setPipelineActive(true);
+    setPipelineSteps({});
+
     try {
-      await onRespond(entry.id, message, true);
+      const { entry: updatedEntry } = await resolveEntryStream(
+        entry.id,
+        message,
+        (step) => setPipelineSteps((prev) => ({ ...prev, [step.agent]: step })),
+      );
       setTriageSubmitted(true);
+      // Brief pause to show completed pipeline before collapsing
+      await new Promise((r) => setTimeout(r, 800));
+      setPipelineComplete(true);
+      // Let collapse animation finish, then update entry
+      await new Promise((r) => setTimeout(r, 700));
+      if (onEntryUpdated) onEntryUpdated(updatedEntry);
+    } catch {
+      // Fallback to regular endpoint if streaming fails
+      if (onRespond) {
+        try {
+          await onRespond(entry.id, message, true);
+          setTriageSubmitted(true);
+        } catch { /* silent */ }
+      }
+      setPipelineActive(false);
+      setPipelineComplete(false);
     } finally {
       setTriageSubmitting(false);
     }
@@ -533,12 +567,17 @@ export function EntryCard({ entry, onRespond, onDelete }: EntryCardProps) {
       )}
 
       {/* Triage Form — shown for new active entries with questions */}
-      {showTriageForm && onRespond && (
+      {showTriageForm && !pipelineActive && (
         <TriageForm
           questions={entry.triageQuestions!}
           onSubmit={handleTriageSubmit}
           submitting={triageSubmitting}
         />
+      )}
+
+      {/* Agent Pipeline — shown during streaming resolution */}
+      {pipelineActive && (
+        <AgentPipeline steps={pipelineSteps} complete={pipelineComplete} />
       )}
 
       {/* Structured Triage Assessment — shown after resolution */}

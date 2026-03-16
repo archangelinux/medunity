@@ -215,6 +215,74 @@ export async function markSignalArrived(signalId: string) {
   });
 }
 
+// --- Streaming resolve (SSE agent pipeline) ---
+
+export interface PipelineStep {
+  agent: string;
+  status: 'waiting' | 'running' | 'done';
+  label: string;
+  detail?: string;
+  data?: Record<string, unknown>;
+}
+
+export async function resolveEntryStream(
+  entryId: string,
+  message: string,
+  onStep: (step: PipelineStep) => void,
+): Promise<{ entry: HealthEntry }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const res = await fetch(`${API_BASE}/api/entries/${entryId}/resolve-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message, resolve: true }),
+  });
+
+  if (!res.ok) throw new Error(`Stream error: ${res.status}`);
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalEntry: HealthEntry | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    let eventType = '';
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith('data:') && eventType) {
+        try {
+          const payload = JSON.parse(line.slice(5).trim());
+          if (eventType === 'step') {
+            onStep(payload as PipelineStep);
+          } else if (eventType === 'complete') {
+            finalEntry = payload.entry as HealthEntry;
+          }
+        } catch { /* skip malformed */ }
+        eventType = '';
+      }
+    }
+  }
+
+  if (!finalEntry) throw new Error('Stream ended without completion');
+  return { entry: finalEntry };
+}
+
+export async function clearAllSignals(): Promise<void> {
+  await request('/api/provider/signals/clear-all', { method: 'DELETE' });
+}
+
 export async function analyzeDemand(payload: {
   signals: Record<string, unknown>[];
   facility_name: string;

@@ -1,5 +1,6 @@
 import json
 from google import genai
+from google.genai.types import GenerateContentConfig
 from backend.agent.triage import assess_ctas
 
 MODEL = "gemini-2.5-flash"
@@ -101,6 +102,7 @@ Rules:
     response = await client.aio.models.generate_content(
         model=MODEL,
         contents=prompt,
+        config=GenerateContentConfig(temperature=0.2),
     )
     result = _parse_json(response.text)
 
@@ -219,6 +221,7 @@ Rules:
     response = await client.aio.models.generate_content(
         model=MODEL,
         contents=prompt,
+        config=GenerateContentConfig(temperature=0.2),
     )
     result = _parse_json(response.text)
 

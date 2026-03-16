@@ -192,6 +192,10 @@ export default function DashboardPage() {
                 entry={entry}
                 onRespond={handleRespond}
                 onDelete={handleDelete}
+                onEntryUpdated={(updated) => {
+                  updateEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+                  refreshOverview();
+                }}
               />
             ))}
           </div>
@@ -234,6 +238,10 @@ export default function DashboardPage() {
                 entry={entry}
                 onRespond={handleRespond}
                 onDelete={handleDelete}
+                onEntryUpdated={(updated) => {
+                  updateEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+                  refreshOverview();
+                }}
               />
             ))}
           </div>

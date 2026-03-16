@@ -2,10 +2,14 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 import asyncio
+import json as _json
+
+from sse_starlette.sse import EventSourceResponse
 
 from backend.models.schemas import CreateEntryRequest, RespondRequest
 from backend.services.supabase import get_supabase
 from backend.agent.processor import process_new_entry, resolve_entry
+from backend.agent.triage import assess_ctas
 from backend.api.deps import get_current_user_id
 from backend.api.overview import regenerate_summary
 
@@ -402,3 +406,289 @@ async def delete_entry(entry_id: str, user_id: str = Depends(get_current_user_id
     asyncio.create_task(regenerate_summary(user_id))
 
     return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming endpoint — real-time agent pipeline visibility
+# ---------------------------------------------------------------------------
+
+@router.post("/{entry_id}/resolve-stream")
+async def resolve_entry_stream(
+    entry_id: str,
+    req: RespondRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Stream agent pipeline steps via SSE during triage resolution."""
+    sb = get_supabase()
+
+    entry_result = sb.table("entries").select("*").eq("id", entry_id).execute()
+    if not entry_result.data:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    entry = entry_result.data[0]
+
+    # Store triage form responses
+    sb.table("thread_messages").insert(
+        {"entry_id": entry_id, "role": "user", "text": req.message}
+    ).execute()
+
+    # Pre-fetch all context before generator starts
+    thread = (
+        sb.table("thread_messages")
+        .select("*")
+        .eq("entry_id", entry_id)
+        .order("created_at")
+        .execute()
+    ).data or []
+
+    symptoms = entry.get("extracted_symptoms") or []
+
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    recent_entries = (
+        sb.table("entries")
+        .select("*")
+        .eq("user_id", user_id)
+        .neq("id", entry_id)
+        .gte("created_at", thirty_days_ago)
+        .order("created_at", desc=True)
+        .limit(10)
+        .execute()
+    ).data or []
+
+    profile_result = sb.table("user_profiles").select("*").eq("user_id", user_id).execute()
+    user_profile = profile_result.data[0] if profile_result.data else None
+
+    # Build presentation (same logic as resolve_entry in processor.py)
+    demographics = ""
+    if user_profile:
+        parts = []
+        if user_profile.get("age"):
+            parts.append(f"{user_profile['age']} year old")
+        if user_profile.get("sex"):
+            parts.append(user_profile["sex"])
+        for field, prefix in [("conditions", "known conditions"), ("medications", "current medications"), ("allergies", "allergies")]:
+            val = user_profile.get(field)
+            if isinstance(val, list) and val:
+                parts.append(f"{prefix}: {', '.join(val)}")
+        if parts:
+            demographics = f"Patient: {', '.join(parts)}\n"
+
+    thread_context = ""
+    if thread:
+        thread_lines = [
+            f"{'Agent' if m['role'] == 'assistant' else 'User'}: {m['text']}"
+            for m in thread
+        ]
+        thread_context = "Conversation/triage responses:\n" + "\n".join(thread_lines)
+
+    symptom_list = ", ".join(s.get("label", str(s)) for s in symptoms) if symptoms else "none extracted"
+
+    presentation = f"""{demographics}Original complaint: "{entry['raw_text']}"
+Extracted symptoms: {symptom_list}
+{thread_context}"""
+
+    async def event_generator():
+        # --- Step 1: Intake (already done above, report instantly) ---
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "intake", "status": "done",
+                "label": "Intake Processing",
+                "detail": f"{len([m for m in thread if m['role'] == 'user'])} triage responses recorded",
+            }),
+        }
+
+        # --- Step 2: CTAS Assessment (fine-tuned model) ---
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "ctas", "status": "running",
+                "label": "Clinical Triage Model",
+                "detail": "Assessing severity with fine-tuned CTAS model...",
+            }),
+        }
+
+        triage_result = await assess_ctas(presentation)
+
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "ctas", "status": "done",
+                "label": "Clinical Triage Model",
+                "detail": triage_result.get("reasoning", ""),
+                "data": {
+                    "ctas_level": triage_result["ctas_level"],
+                    "ctas_label": triage_result["ctas_label"],
+                    "reasoning": triage_result.get("reasoning", ""),
+                    "model": triage_result.get("model", ""),
+                },
+            }),
+        }
+
+        # --- Step 3: Report Generation (Gemini) ---
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "report", "status": "running",
+                "label": "Assessment Agent",
+                "detail": "Generating clinical report and care recommendations...",
+            }),
+        }
+
+        from google import genai
+        from google.genai.types import GenerateContentConfig
+        from backend.agent.processor import _parse_json as parse_json
+
+        report_prompt = f"""You are a health assessment agent for a Canadian health tracking app. Based on the user's complaint and triage responses, provide a structured triage report.
+
+{presentation}
+
+CTAS Assessment: Level {triage_result['ctas_level']} - {triage_result['ctas_label']}
+Triage reasoning: {triage_result['reasoning']}
+
+IMPORTANT — You MUST use the CTAS level above. Do NOT override it. The CTAS assessment was produced by a fine-tuned clinical model and is authoritative.
+
+CTAS calibration reference:
+- CTAS 1 (Resuscitation): cardiac arrest, major trauma, respiratory failure, unconscious
+- CTAS 2 (Emergent): chest pain with cardiac features, stroke signs, severe allergic reaction
+- CTAS 3 (Urgent): high fever >39C, asthma attack, persistent vomiting, significant pain 7+/10
+- CTAS 4 (Less Urgent): mild-moderate pain, earache, sore throat with fever, UTI symptoms, headache without red flags
+- CTAS 5 (Non-Urgent): mild cold, prescription refill, minor scratch, chronic stable complaint
+
+A "dull headache with nausea" without red flags is CTAS 4-5, NOT CTAS 2.
+
+Respond ONLY with valid JSON:
+{{
+  "ctas_level": {triage_result['ctas_level']},
+  "ctas_label": "{triage_result['ctas_label']}",
+  "summary": "A concise 1-sentence summary.",
+  "symptoms_identified": ["symptom1", "symptom2"],
+  "assessment": "A 2-3 sentence clinical assessment. Address any user questions directly.",
+  "recommended_action": "Specific next step recommendation.",
+  "watch_for": ["Red-flag 1", "Red-flag 2", "Red-flag 3"],
+  "urgency_timeframe": "e.g., 'Within 24 hours'",
+  "recommended_care_type": "hospital|walk-in|urgent-care|telehealth",
+  "recommended_facility_types": ["walk-in", "hospital"],
+  "facility_search_terms": ["lab work", "urology"],
+  "facility_exclude_keywords": ["pediatric", "children"],
+  "status": "resolved"
+}}
+
+Rules:
+- summary: single clear sentence
+- assessment: informative but not alarming
+- recommended_action: specific and actionable
+- watch_for: array of 2-5 red-flag symptoms
+- recommended_care_type: one of hospital, walk-in, urgent-care, telehealth
+- recommended_facility_types: from hospital, walk-in, urgent-care, community-centre, wellness-centre, telehealth
+- facility_search_terms: 2-4 keywords for services needed
+- facility_exclude_keywords: keywords to EXCLUDE irrelevant facilities"""
+
+        client = genai.Client()
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=report_prompt,
+            config=GenerateContentConfig(temperature=0.2),
+        )
+        result = parse_json(response.text)
+
+        # Apply defaults
+        result.setdefault("ctas_level", triage_result["ctas_level"])
+        result.setdefault("ctas_label", triage_result["ctas_label"])
+        result.setdefault("summary", "Assessment completed.")
+        result.setdefault("symptoms_identified", [])
+        result.setdefault("assessment", "Assessment completed.")
+        result.setdefault("recommended_action", "Monitor symptoms.")
+        result.setdefault("watch_for", [])
+        result.setdefault("urgency_timeframe", "Monitor as needed")
+        result.setdefault("recommended_care_type", "walk-in")
+        result.setdefault("recommended_facility_types", [result.get("recommended_care_type", "walk-in")])
+        result.setdefault("facility_search_terms", [])
+        result.setdefault("facility_exclude_keywords", [])
+        result.setdefault("status", "resolved")
+        if isinstance(result.get("watch_for"), str):
+            result["watch_for"] = [s.strip() for s in result["watch_for"].split(",") if s.strip()]
+
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "report", "status": "done",
+                "label": "Assessment Agent",
+                "detail": result.get("summary", ""),
+            }),
+        }
+
+        # --- Step 4: Finalize ---
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "finalize", "status": "running",
+                "label": "Finalizing",
+                "detail": "Saving assessment...",
+            }),
+        }
+
+        patient_demographics = {}
+        if user_profile:
+            for f in ("age", "sex"):
+                if user_profile.get(f):
+                    patient_demographics[f] = user_profile[f]
+            for f in ("conditions", "medications", "allergies"):
+                v = user_profile.get(f)
+                if isinstance(v, list) and v:
+                    patient_demographics[f] = v
+
+        triage_report = {
+            "summary": result.get("summary", ""),
+            "symptoms_identified": result.get("symptoms_identified", []),
+            "assessment": result.get("assessment", ""),
+            "recommended_action": result.get("recommended_action", ""),
+            "watch_for": result.get("watch_for", []),
+            "urgency_timeframe": result.get("urgency_timeframe", ""),
+            "recommended_care_type": result.get("recommended_care_type", "walk-in"),
+            "recommended_facility_types": result.get("recommended_facility_types", []),
+            "facility_search_terms": result.get("facility_search_terms", []),
+            "facility_exclude_keywords": result.get("facility_exclude_keywords", []),
+            "patient_demographics": patient_demographics,
+        }
+
+        sb.table("entries").update({
+            "ctas_level": result["ctas_level"],
+            "ctas_label": result["ctas_label"],
+            "assessment": result["assessment"],
+            "recommended_action": result["recommended_action"],
+            "status": result["status"],
+            "triage_report": triage_report,
+        }).eq("id", entry_id).execute()
+
+        sb.table("thread_messages").insert(
+            {"entry_id": entry_id, "role": "assistant", "text": "Your preliminary triage assessment is ready."}
+        ).execute()
+
+        updated = sb.table("entries").select("*").eq("id", entry_id).execute()
+        msgs = (
+            sb.table("thread_messages")
+            .select("*")
+            .eq("entry_id", entry_id)
+            .order("created_at")
+            .execute()
+        )
+
+        asyncio.create_task(regenerate_summary(user_id))
+
+        yield {
+            "event": "step",
+            "data": _json.dumps({
+                "agent": "finalize", "status": "done",
+                "label": "Finalizing",
+                "detail": "Assessment saved",
+            }),
+        }
+
+        yield {
+            "event": "complete",
+            "data": _json.dumps({
+                "entry": _transform_entry(updated.data[0], msgs.data or []),
+            }),
+        }
+
+    return EventSourceResponse(event_generator())

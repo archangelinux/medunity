@@ -258,6 +258,68 @@ export function SignalReportPopup({ signal, onClose }: SignalReportPopupProps) {
             </div>
           )}
 
+          {/* Related Prior Entries */}
+          {report?.linkedEntries && report.linkedEntries.length > 0 && (
+            <div>
+              <h3 className="text-[0.75rem] font-semibold text-text-tertiary uppercase tracking-wider mb-2">
+                Related Prior Entries
+              </h3>
+              <div className="space-y-2">
+                {report.linkedEntries.map((le, idx) => {
+                  const leColor = CTAS_COLORS[le.ctasLevel as CTASLevel] || '#94A3B8';
+                  const lePairs = le.triageResponses ? parseTriageText(le.triageResponses) : [];
+                  return (
+                    <div key={idx} className="rounded-[var(--radius-md)] border border-border-soft overflow-hidden">
+                      <div className="px-3 py-2 bg-surface-soft/50 flex items-center justify-between">
+                        <span className="text-[0.75rem] font-medium text-text-primary">
+                          {formatDate(le.timestamp)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-[0.5625rem] font-bold text-white"
+                            style={{ background: leColor }}
+                          >
+                            {le.ctasLevel}
+                          </span>
+                          <span className="text-[0.6875rem] text-text-tertiary">
+                            {CTAS_LABELS[le.ctasLevel as CTASLevel]}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-3 py-2.5 space-y-2">
+                        <p className="text-[0.8125rem] text-text-secondary italic">
+                          &ldquo;{le.userText}&rdquo;
+                        </p>
+                        {le.symptoms.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {le.symptoms.map((s, si) => (
+                              <span key={si} className="px-2 py-0.5 text-[0.6875rem] rounded-[var(--radius-sm)] bg-surface-soft text-text-tertiary border border-border-soft">
+                                {typeof s === 'string' ? s : s.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {lePairs.length > 0 && (
+                          <div className="rounded-[var(--radius-sm)] border border-border-soft overflow-hidden">
+                            {lePairs.map((qa, qi) => (
+                              <div key={qi} className={`grid grid-cols-[1fr_1fr] ${qi > 0 ? 'border-t border-border-soft' : ''}`}>
+                                <div className="px-2.5 py-1.5 bg-surface-soft/50 text-[0.75rem] text-text-tertiary">{qa.question}</div>
+                                <div className="px-2.5 py-1.5 text-[0.75rem] text-text-primary">{qa.answer}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {le.assessment && (
+                          <p className="text-[0.8125rem] text-text-secondary">{le.assessment}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Disclaimer */}
           <div className="border-t border-border-soft pt-4">
             <div className="flex items-start gap-1.5">

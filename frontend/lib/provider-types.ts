@@ -14,6 +14,21 @@ export interface TriageSignal {
   reportedAt: string;
 }
 
+export interface LinkedEntryData {
+  userText: string;
+  symptoms: { label: string; category: string }[];
+  ctasLevel: number;
+  timestamp: string;
+  assessment: string;
+  triageResponses?: string;
+  triageReport?: {
+    summary: string;
+    assessment: string;
+    recommendedAction: string;
+    watchFor: string[];
+  };
+}
+
 export interface TriageDocumentData {
   userText: string;
   symptoms: { label: string; category: string }[];
@@ -29,6 +44,14 @@ export interface TriageDocumentData {
     recommendedCareType: string;
   };
   triageResponses?: string;
+  linkedEntries?: LinkedEntryData[];
+  patientDemographics?: {
+    age?: number;
+    sex?: string;
+    conditions?: string[];
+    medications?: string[];
+    allergies?: string[];
+  };
 }
 
 export interface ProviderSignal extends TriageSignal {

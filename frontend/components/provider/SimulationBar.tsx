@@ -1,6 +1,6 @@
 'use client';
 
-import { Play, Pause, RotateCcw, Radio, FastForward, CheckCircle } from 'lucide-react';
+import { Play, Pause, RotateCcw, Radio, FastForward, CheckCircle, X } from 'lucide-react';
 import type { Scenario } from '@/lib/provider-types';
 import { SCENARIOS } from '@/lib/provider-types';
 
@@ -11,6 +11,7 @@ interface SimulationBarProps {
   isLive: boolean;
   onToggleLive: () => void;
   onClear: () => void;
+  onClearReal?: () => void;
   realCount: number;
   simCount: number;
   arrivedCount: number;
@@ -29,6 +30,7 @@ export function SimulationBar({
   isLive,
   onToggleLive,
   onClear,
+  onClearReal,
   realCount,
   simCount,
   arrivedCount,
@@ -143,7 +145,7 @@ export function SimulationBar({
         )}
       </div>
 
-      {/* Reset (only clears simulation) */}
+      {/* Reset sim */}
       <button
         onClick={onClear}
         disabled={simCount === 0 && arrivedCount === 0}
@@ -152,6 +154,17 @@ export function SimulationBar({
         <RotateCcw size={11} />
         Reset Sim
       </button>
+
+      {/* Clear real signals */}
+      {onClearReal && realCount > 0 && (
+        <button
+          onClick={onClearReal}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] text-[0.6875rem] text-text-tertiary hover:text-danger hover:bg-danger-soft transition-colors cursor-pointer"
+        >
+          <X size={11} />
+          Clear Real
+        </button>
+      )}
     </div>
   );
 }

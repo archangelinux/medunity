@@ -84,6 +84,23 @@ export function ProviderReport({ entry, facility, departureOffset = 0, userLocat
             .filter((m) => m.role === 'user')
             .map((m) => m.text)
             .join('\n'),
+          linkedEntries: linkedEntries.map((le) => ({
+            userText: le.userText,
+            symptoms: le.symptoms.map((s) => ({ label: s.label, category: s.category })),
+            ctasLevel: le.ctasLevel,
+            timestamp: le.timestamp,
+            assessment: le.triageReport?.assessment || le.assessment || '',
+            triageResponses: le.followUp
+              .filter((m) => m.role === 'user')
+              .map((m) => m.text)
+              .join('\n'),
+            triageReport: le.triageReport ? {
+              summary: le.triageReport.summary,
+              assessment: le.triageReport.assessment,
+              recommendedAction: le.triageReport.recommendedAction,
+              watchFor: le.triageReport.watchFor,
+            } : undefined,
+          })),
         },
       }) as { signal?: { id?: string } };
       const signalId = result?.signal?.id;
@@ -330,12 +347,12 @@ export function ProviderReport({ entry, facility, departureOffset = 0, userLocat
                       </span>
                       <CTASBadge level={le.ctasLevel} className="!text-[0.625rem] !px-2 !py-0.5" />
                     </div>
-                    <div className="px-3 py-2.5">
-                      <p className="text-[0.8125rem] text-text-secondary italic mb-2">
+                    <div className="px-3 py-2.5 space-y-2">
+                      <p className="text-[0.8125rem] text-text-secondary italic">
                         &ldquo;{le.userText}&rdquo;
                       </p>
                       {le.symptoms.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
+                        <div className="flex flex-wrap gap-1">
                           {le.symptoms.map((s) => (
                             <span key={s.label} className="px-2 py-0.5 text-[0.6875rem] rounded-[var(--radius-sm)] bg-surface-soft text-text-tertiary border border-border-soft">
                               {s.label}
@@ -343,6 +360,21 @@ export function ProviderReport({ entry, facility, departureOffset = 0, userLocat
                           ))}
                         </div>
                       )}
+                      {/* Prior entry triage survey responses */}
+                      {(() => {
+                        const priorResponses = parseTriageResponses(le.followUp);
+                        return priorResponses.length > 0 ? (
+                          <div className="rounded-[var(--radius-sm)] border border-border-soft overflow-hidden">
+                            {priorResponses.map((qa, qi) => (
+                              <div key={qi} className={`grid grid-cols-[1fr_1fr] ${qi > 0 ? 'border-t border-border-soft' : ''}`}>
+                                <div className="px-2.5 py-1.5 bg-surface-soft/50 text-[0.75rem] text-text-tertiary">{qa.question}</div>
+                                <div className="px-2.5 py-1.5 text-[0.75rem] text-text-primary">{qa.answer}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
+                      {/* Prior entry assessment */}
                       {le.triageReport ? (
                         <p className="text-[0.8125rem] text-text-secondary">{le.triageReport.assessment}</p>
                       ) : le.assessment ? (

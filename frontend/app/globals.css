@@ -173,6 +173,30 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
+/* Agent pipeline animations */
+@keyframes pipeline-radar {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.pipeline-radar {
+  animation: pipeline-radar 1.5s ease-out infinite;
+}
+@keyframes pipeline-node-done {
+  0% { transform: scale(0.6); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.pipeline-node-done {
+  animation: pipeline-node-done 350ms ease-out;
+}
+@keyframes pipeline-result-enter {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.pipeline-result-enter {
+  animation: pipeline-result-enter 300ms ease-out forwards;
+}
+
 /* Signal popup overrides */
 .signal-popup .mapboxgl-popup-content {
   border-radius: var(--radius-md) !important;

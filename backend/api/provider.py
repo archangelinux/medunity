@@ -151,6 +151,14 @@ async def mark_arrived(signal_id: str):
     return {"arrived": True}
 
 
+@router.delete("/signals/clear-all")
+async def clear_all_signals():
+    """Clear all active provider signals. Used for cleanup."""
+    sb = get_supabase()
+    sb.table("provider_signals").delete().eq("status", "active").execute()
+    return {"cleared": True}
+
+
 @router.post("/analyze")
 async def analyze_demand(req: AnalyzeRequest):
     """Run Railtracks demand analysis agent."""

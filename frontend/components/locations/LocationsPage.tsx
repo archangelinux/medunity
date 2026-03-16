@@ -31,15 +31,19 @@ import { CTAS_FACILITY_MAP } from '@/lib/types';
 // Specialist facility keywords — clinics with these in the name are specialty-only
 // and should be excluded unless the patient's condition specifically matches
 const SPECIALIST_KEYWORDS = [
-  'eye', 'vision', 'optom', 'ophthal', 'dental', 'dent', 'orthodon',
+  'eye', 'vision', 'optom', 'ophthal', 'optical',
+  'dental', 'dent', 'orthodon', 'oral surgery',
   'chiro', 'physio', 'physiother', 'massage', 'acupunctur', 'naturo',
-  'cosmetic', 'aesthetic', 'dermat', 'skin', 'laser', 'hair',
-  'fertility', 'ivf', 'prenatal', 'maternity', 'obstet',
+  'cosmetic', 'aesthetic', 'dermat', 'skin', 'laser', 'hair', 'beauty',
+  'fertility', 'ivf', 'prenatal', 'maternity', 'obstet', 'midwi',
   'veterinar', 'animal', 'pet',
   'occupational therapy', 'speech', 'audiol', 'hearing',
-  'podiatr', 'foot care', 'orthotics',
-  'weight loss', 'bariatric', 'diet',
+  'podiatr', 'foot care', 'footcare', 'orthotics', 'biopod', 'orthoped',
+  'weight loss', 'bariatric', 'diet', 'nutrition',
   'sleep clinic', 'imaging', 'mri', 'x-ray', 'radiol',
+  'lab', 'blood test', 'specimen',
+  'pharmacy', 'dispensar',
+  'rehab', 'rehabilitation',
 ];
 
 function isSpecialistMatch(facilityName: string, searchTerms: string[]): boolean {
@@ -184,7 +188,16 @@ export function LocationsPage({ entryId, patternEntryIds }: LocationsPageProps) 
         .finally(() => setStagingLoading(false));
     } else if (entryId) {
       getEntry(entryId)
-        .then((entry) => setStagingEntry(entry))
+        .then(async (entry) => {
+          setStagingEntry(entry);
+          // Fetch linked entries' full data for the report
+          if (entry.linkedEntries && entry.linkedEntries.length > 0) {
+            const linked = await Promise.all(
+              entry.linkedEntries.map((le) => getEntry(le.id).catch(() => null))
+            );
+            setPatternLinkedEntries(linked.filter((e): e is HealthEntry => e !== null));
+          }
+        })
         .catch(() => setStagingEntry(null))
         .finally(() => setStagingLoading(false));
     }

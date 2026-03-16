@@ -108,6 +108,7 @@ async def assess_ctas(structured_presentation: str) -> dict:
             contents=structured_presentation,
             config=GenerateContentConfig(
                 system_instruction=CTAS_SYSTEM_INSTRUCTION,
+                temperature=0.1,
             ),
         )
         result = _parse_ctas_text(response.text)
@@ -131,6 +132,9 @@ Respond ONLY with valid JSON. No markdown, no explanation outside the JSON."""
         response = await client.aio.models.generate_content(
             model=FALLBACK_MODEL,
             contents=prompt,
+            config=GenerateContentConfig(
+                temperature=0.1,
+            ),
         )
         parsed = _parse_json(response.text)
         level = int(parsed.get("ctas_level", 4))

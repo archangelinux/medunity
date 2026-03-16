@@ -7,7 +7,7 @@ import { MapPin, ArrowLeft, ChevronDown } from 'lucide-react';
 import { generateScenario, generateLiveSignal, computeFacilityLoads } from '@/lib/simulation';
 import type { ProviderSignal, Scenario, DemandAnalysis, CuratedFacility } from '@/lib/provider-types';
 import { TORONTO_HOSPITALS } from '@/lib/provider-types';
-import { getProviderSignals, analyzeDemand } from '@/lib/api';
+import { getProviderSignals, analyzeDemand, clearAllSignals } from '@/lib/api';
 import { fetchRoutesForSignals } from '@/lib/routes';
 import { ProviderMap } from '@/components/provider/ProviderMap';
 import { DemandPanel } from '@/components/provider/DemandPanel';
@@ -265,6 +265,15 @@ export default function ProviderPage() {
     routeFetchedRef.current.clear();
   }, []);
 
+  const handleClearReal = useCallback(async () => {
+    try {
+      await clearAllSignals();
+      setRealSignals([]);
+    } catch (e) {
+      console.error('Failed to clear signals:', e);
+    }
+  }, []);
+
   const handleFacilitySelect = useCallback((id: string) => {
     setSelectedFacilityId(id);
     setShowPicker(false);
@@ -368,6 +377,7 @@ export default function ProviderPage() {
           isLive={isLive}
           onToggleLive={() => setIsLive((p) => !p)}
           onClear={handleClear}
+          onClearReal={handleClearReal}
           realCount={realSignals.length}
           simCount={simSignals.length}
           arrivedCount={arrivedCount}
